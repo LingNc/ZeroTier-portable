@@ -143,30 +143,147 @@ function Show-Menu {
 
 # 查看当前Planet信息
 function Show-PlanetInfo {
+    Clear-Host
+    Write-Host @"
+===================================================
+      查看当前Planet服务器信息
+      版本: $version
+===================================================
+"@ -ForegroundColor Cyan
+
+    # 检查Planet文件是否存在
     if (-not (Test-Path $planetFile)) {
-        Write-Host "当前未找到Planet文件: $planetFile" -ForegroundColor Yellow
+        Write-Host "`n当前未找到Planet文件: $planetFile" -ForegroundColor Yellow
         Write-Host "这意味着ZeroTier将使用默认内置的Planet服务器。" -ForegroundColor Cyan
-        return
     }
+    else {
+        # 分析Planet文件内容
+        Write-Host "`nPlanet文件信息:" -ForegroundColor Cyan
+        Write-Host "路径: $planetFile" -ForegroundColor Yellow
+        Write-Host "大小: $((Get-Item $planetFile).Length) 字节" -ForegroundColor Yellow
+        Write-Host "修改时间: $((Get-Item $planetFile).LastWriteTime)" -ForegroundColor Yellow
 
-    # 尝试分析Planet文件内容
-    Write-Host "Planet文件信息:" -ForegroundColor Cyan
-    Write-Host "路径: $planetFile" -ForegroundColor Yellow
-    Write-Host "大小: $((Get-Item $planetFile).Length) 字节" -ForegroundColor Yellow
-    Write-Host "修改时间: $((Get-Item $planetFile).LastWriteTime)" -ForegroundColor Yellow
+        # 尝试解析Planet文件内容
+        Write-Host "`n尝试解析Planet文件内容..." -ForegroundColor Yellow
 
-    # 可以尝试使用ZeroTier工具查看Planet详细信息
-    # 但这依赖于ZeroTier提供此功能，如果不支持则跳过
-    try {
-        $planetInfo = & "$zerotierExe" -i dumpplanets "$planetFile" 2>&1
-        if ($planetInfo -and $planetInfo -notmatch "error") {
-            Write-Host "`nPlanet详细信息:" -ForegroundColor Cyan
-            Write-Host $planetInfo
+        # 先检查ZeroTier是否正在运行
+        $ztRunning = $false
+        $processes = Get-Process -Name "zerotier-one*" -ErrorAction SilentlyContinue
+        if ($processes) {
+            $ztRunning = $true
+            Write-Host "`nZeroTier已运行，尝试获取活动Planet信息..." -ForegroundColor Green
+
+            # 从peers命令输出中提取PLANET信息
+            try {
+                $peersOutput = & "$zerotierExe" -q -D"$dataPath" "peers" 2>&1
+                $planetPeers = $peersOutput | Where-Object { $_ -match "PLANET" }
+
+                if ($planetPeers) {
+                    Write-Host "`n当前活动的Planet节点:" -ForegroundColor Green
+                    foreach ($peer in $planetPeers) {
+                        Write-Host $peer -ForegroundColor Cyan
+                    }
+                }
+                else {
+                    Write-Host "`n未找到活动的Planet节点" -ForegroundColor Yellow
+                }
+            }
+            catch {
+                Write-Host "`n获取活动Planet信息失败: $_" -ForegroundColor Red
+            }
+        }
+        else {
+            Write-Host "`nZeroTier未运行，无法获取活动Planet信息" -ForegroundColor Yellow
+            Write-Host "启动ZeroTier后可获取更详细的Planet连接信息" -ForegroundColor Yellow
+        }
+
+        # 无论ZeroTier是否运行，都尝试直接解析Planet文件
+        try {
+            # 尝试读取Planet文件的二进制内容并查找IP地址模式
+            $planetBytes = [System.IO.File]::ReadAllBytes($planetFile)
+            $ipv4Pattern = [byte[]]@(0,0,0,0)  # IP地址前的标记
+            $ipAddresses = @()
+
+            for ($i = 0; $i -lt $planetBytes.Length - 8; $i++) {
+                # 检查是否可能是IPv4地址标记
+                if ($planetBytes[$i] -ge 1 -and $planetBytes[$i] -le 5 -and
+                    $planetBytes[$i+1] -eq 0 -and
+                    $planetBytes[$i+2] -eq 0 -and
+                    $planetBytes[$i+3] -eq 0) {
+
+                    # 可能找到一个IPv4地址，尝试解析
+                    $ip1 = $planetBytes[$i+4]
+                    $ip2 = $planetBytes[$i+5]
+                    $ip3 = $planetBytes[$i+6]
+                    $ip4 = $planetBytes[$i+7]
+
+                    # 只保留有效的IP地址格式
+                    if ($ip1 -le 255 -and $ip2 -le 255 -and $ip3 -le 255 -and $ip4 -le 255) {
+                        $ipStr = "$ip1.$ip2.$ip3.$ip4"
+                        if (-not $ipAddresses.Contains($ipStr)) {
+                            $ipAddresses += $ipStr
+                        }
+                    }
+                }
+            }
+
+            if ($ipAddresses.Count -gt 0) {
+                Write-Host "`n从Planet文件中检测到的可能服务器地址:" -ForegroundColor Green
+                foreach ($ip in $ipAddresses) {
+                    Write-Host "- $ip" -ForegroundColor Cyan
+                }
+                Write-Host "`n注意: 这是通过二进制分析推测的结果，可能不完全准确" -ForegroundColor Yellow
+            }
+            else {
+                Write-Host "`n无法从Planet文件中提取服务器地址" -ForegroundColor Yellow
+            }
+
+            # 尝试分析文件头部信息
+            try {
+                $fileHeader = $planetBytes[0..32] -join ","
+                Write-Host "`nPlanet文件头部分析:" -ForegroundColor Yellow
+                Write-Host "文件头部字节: $fileHeader" -ForegroundColor Cyan
+
+                # 查找可能的字符串标识
+                $asciiBytes = [System.Text.Encoding]::ASCII.GetBytes("PLANET")
+                $idx = [Array]::IndexOf($planetBytes, $asciiBytes[0])
+                $found = $false
+
+                while ($idx -ge 0 -and $idx -lt ($planetBytes.Length - 6)) {
+                    $found = $true
+                    for ($j = 1; $j -lt 6; $j++) {
+                        if (($idx + $j) -ge $planetBytes.Length -or $planetBytes[$idx + $j] -ne $asciiBytes[$j]) {
+                            $found = $false
+                            break
+                        }
+                    }
+
+                    if ($found) {
+                        Write-Host "在文件中发现'PLANET'标识位置: $idx" -ForegroundColor Green
+                        break
+                    }
+
+                    $idx = [Array]::IndexOf($planetBytes, $asciiBytes[0], $idx + 1)
+                }
+
+                if (-not $found) {
+                    Write-Host "未在文件中找到'PLANET'标识" -ForegroundColor Yellow
+                }
+            }
+            catch {
+                Write-Host "分析文件头部时出错: $_" -ForegroundColor Red
+            }
+
+            # 提供使用建议
+            Write-Host "`n要查看更详细的Planet连接信息，请在启动ZeroTier后使用以下命令:" -ForegroundColor Green
+            Write-Host "zerotier-cli.bat peers | Select-String 'PLANET'" -ForegroundColor Cyan
+        }
+        catch {
+            Write-Host "`n解析Planet文件失败: $_" -ForegroundColor Red
         }
     }
-    catch {
-        Write-Host "无法读取Planet详细信息" -ForegroundColor Red
-    }
+
+    Write-Host "`n如要替换Planet文件，请在主菜单中选择相应选项" -ForegroundColor Yellow
 }
 
 # 恢复默认Planet
@@ -195,20 +312,10 @@ function Restore-DefaultPlanet {
 
 # 从网络下载Planet文件
 function Download-PlanetFile {
-    # 清屏并显示标题
-    Clear-Host
-    Write-Host @"
-===================================================
-      从网络下载Planet文件
-      版本: 1.1.2
-===================================================
-"@ -ForegroundColor Cyan
-
-    Write-Host "`n提示: 输入'q'或按'Esc'键可随时返回主菜单" -ForegroundColor Yellow
+    Write-Host "提示: 输入'q'或按'Esc'键可随时返回主菜单" -ForegroundColor Yellow
 
     # 提示用户提供下载URL
     Write-Host "`n请输入Planet文件的下载URL" -ForegroundColor Green
-    Write-Host "(输入'q'并按Enter返回主菜单，或按'Esc'键立即返回)" -ForegroundColor Yellow
 
     # 读取用户输入的函数，同时支持q和Esc键退出
     function Read-InputWithEsc {

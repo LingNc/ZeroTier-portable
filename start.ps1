@@ -1,7 +1,7 @@
 ﻿# ZeroTier便携版启动脚本
 # 此脚本用于启动便携版ZeroTier
 # 作者: GitHub Copilot
-# 版本: 1.1.3
+# 版本: 1.1.4
 # 日期: 2025-04-10
 
 # 参数定义 - 必须在脚本开头定义
@@ -43,7 +43,7 @@ if (-not $isAdmin) {
 }
 
 # 版本
-$version="1.1.3"
+$version="1.1.4"
 
 # 显示帮助信息
 function Show-Help {
@@ -227,6 +227,10 @@ switch ($installChoice) {
         $cliSystemPath = "$systemCmdPath\zerotier-cli.bat"
         $idtoolSystemPath = "$systemCmdPath\zerotier-idtool.bat"
 
+        # 定义TAP驱动和服务名称
+        $tapDriverName = "zttap300"
+        $tapServiceName = "zttap300"
+
         # 删除符号链接
         try {
             if (Test-Path $cliSystemPath) {
@@ -241,13 +245,74 @@ switch ($installChoice) {
                 Write-Host "已成功删除zerotier-idtool" -ForegroundColor Green
             }
 
-            Write-Host "`nZeroTier 符号链接已成功移除！" -ForegroundColor Green
+            # 停止并删除TAP服务
+            Write-Host "正在检查并卸载TAP驱动服务..." -ForegroundColor Yellow
+            $service = Get-Service -Name $tapServiceName -ErrorAction SilentlyContinue
+            if ($service) {
+                Write-Host "找到TAP驱动服务: $tapServiceName，正在停止..." -ForegroundColor Yellow
+                try {
+                    Stop-Service -Name $tapServiceName -Force -ErrorAction Stop
+                    Write-Host "服务已停止，正在删除..." -ForegroundColor Yellow
+                    # 使用SC删除服务
+                    $scOutput = sc.exe delete $tapServiceName 2>&1
+                    if ($LASTEXITCODE -eq 0 -or $scOutput -match "成功") {
+                        Write-Host "TAP驱动服务成功删除" -ForegroundColor Green
+                    } else {
+                        Write-Host "警告: TAP驱动服务删除返回未知状态: $LASTEXITCODE" -ForegroundColor Yellow
+                        Write-Host "输出: $scOutput" -ForegroundColor Yellow
+                    }
+                } catch {
+                    Write-Host "停止或删除TAP驱动服务失败: $_" -ForegroundColor Red
+                }
+            } else {
+                Write-Host "未找到TAP驱动服务" -ForegroundColor Yellow
+            }
+
+            # 卸载TAP驱动
+            Write-Host "正在检查并卸载TAP驱动文件..." -ForegroundColor Yellow
+
+            # 查找驱动的OEM名称
+            $driverInfo = pnputil /enum-drivers | Select-String -Pattern $tapDriverName -SimpleMatch
+            if ($driverInfo) {
+                # 从驱动信息中提取OEM#名称
+                $oemPattern = "oem\d+\.inf"
+                $matches = [regex]::Matches($driverInfo, $oemPattern)
+                if ($matches.Count -gt 0) {
+                    $oemName = $matches[0].Value
+                    Write-Host "找到TAP驱动: $oemName，正在卸载..." -ForegroundColor Yellow
+
+                    try {
+                        # 使用pnputil删除驱动
+                        $uninstallOutput = pnputil /delete-driver $oemName /force 2>&1
+
+                        # 检查卸载结果
+                        if ($LASTEXITCODE -eq 0 -or $uninstallOutput -match "成功") {
+                            Write-Host "TAP驱动成功卸载" -ForegroundColor Green
+                        }
+                        else {
+                            Write-Host "警告: TAP驱动卸载返回未知状态: $LASTEXITCODE" -ForegroundColor Yellow
+                            Write-Host "输出: $uninstallOutput" -ForegroundColor Yellow
+                        }
+                    }
+                    catch {
+                        Write-Host "卸载TAP驱动失败: $_" -ForegroundColor Red
+                    }
+                }
+                else {
+                    Write-Host "警告: 找到TAP驱动但无法确定OEM名称" -ForegroundColor Yellow
+                }
+            }
+            else {
+                Write-Host "未找到已安装的TAP驱动" -ForegroundColor Yellow
+            }
+
+            Write-Host "`nZeroTier 已成功卸载！" -ForegroundColor Green
             Write-Host "卸载操作完成。" -ForegroundColor Green
             Read-Host "按Enter退出"
             exit 0
         }
         catch {
-            Write-Host "卸载ZeroTier符号链接失败: $_" -ForegroundColor Red
+            Write-Host "卸载ZeroTier失败: $_" -ForegroundColor Red
             Read-Host "按Enter退出"
             exit 1
         }
@@ -286,26 +351,87 @@ if ($isNewIdentity) {
 # 检查TAP驱动是否已安装
 Write-Host "正在检查TAP驱动安装状态..." -ForegroundColor Yellow
 $tapDriverInf = Join-Path -Path $tapDriverPath -ChildPath "zttap300.inf"
-$tapCheckResult = & "$tapDriverPath\tapctl.exe" list 2>&1
-$tapInstalled = $false
+$tapDriverSys = Join-Path -Path $tapDriverPath -ChildPath "zttap300.sys"
+$tapDriverCat = Join-Path -Path $tapDriverPath -ChildPath "zttap300.cat"
+# 定义驱动程序的服务名称，用于后续卸载
+$tapServiceName = "zttap300"
 
-if ($tapCheckResult -match "Instance") {
+# 检查驱动是否已安装
+$tapInstalled = $false
+$driverInfo = pnputil /enum-drivers | Select-String -Pattern "zttap300" -SimpleMatch
+
+if ($driverInfo) {
     $tapInstalled = $true
     Write-Host "TAP驱动已安装" -ForegroundColor Green
 }
 else {
     Write-Host "安装TAP驱动..." -ForegroundColor Yellow
-    $installResult = & "$tapDriverPath\tapctl.exe" install "$tapDriverInf" tap0901 2>&1
 
-    if ($LASTEXITCODE -eq 0) {
-        Write-Host "TAP驱动安装成功" -ForegroundColor Green
+    # 1. 验证CAT签名
+    Write-Host "验证驱动签名..." -ForegroundColor Yellow
+    try {
+        $catSig = Get-AuthenticodeSignature $tapDriverCat
+        if ($catSig.Status -eq "Valid") {
+            Write-Host "驱动签名验证通过" -ForegroundColor Green
+        } else {
+            Write-Host "警告: 驱动签名无效: $($catSig.StatusMessage)" -ForegroundColor Yellow
+            $continueUnsigned = Read-Host "驱动签名无效，是否继续安装? (Y/N)"
+            if ($continueUnsigned -ne "Y" -and $continueUnsigned -ne "y") {
+                Write-Host "操作已取消。" -ForegroundColor Red
+                exit 1
+            }
+        }
+    }
+    catch {
+        Write-Host "警告: 验证驱动签名失败: $_" -ForegroundColor Yellow
+    }
+
+    # 2. 使用pnputil安装INF驱动
+    try {
+        Write-Host "正在安装INF驱动..." -ForegroundColor Yellow
+        $pnputilOutput = pnputil /add-driver "$tapDriverInf" /install 2>&1
+        # 检查输出是否包含成功信息
+        if ($LASTEXITCODE -eq 0 -or $pnputilOutput -match "成功") {
+            Write-Host "TAP驱动INF安装成功" -ForegroundColor Green
+            $tapInstalled = $true
+        }
+        else {
+            throw "pnputil返回错误代码: $LASTEXITCODE"
+        }
+    }
+    catch {
+        Write-Host "警告: TAP驱动INF安装失败: $_" -ForegroundColor Red
+        Write-Host "原始输出: $pnputilOutput" -ForegroundColor Red
+        $continueAnyway = Read-Host "是否继续尝试注册SYS服务? (Y/N)"
+        if ($continueAnyway -ne "Y" -and $continueAnyway -ne "y") {
+            Write-Host "操作已取消。" -ForegroundColor Red
+            exit 1
+        }
+    }
+
+    # 3. 注册SYS服务
+    try {
+        Write-Host "正在注册TAP驱动服务..." -ForegroundColor Yellow
+        # 检查服务是否已存在
+        $existingService = Get-Service -Name $tapServiceName -ErrorAction SilentlyContinue
+
+        if (-not $existingService) {
+            # 注册新服务
+            New-Service -Name $tapServiceName -BinaryPathName $tapDriverSys -DisplayName "ZeroTier TAP Driver" -StartupType Manual
+            Write-Host "服务注册成功" -ForegroundColor Green
+        } else {
+            Write-Host "服务已存在，尝试启动服务" -ForegroundColor Yellow
+        }
+
+        # 尝试启动服务
+        Start-Service -Name $tapServiceName
+        Write-Host "TAP驱动服务启动成功" -ForegroundColor Green
         $tapInstalled = $true
     }
-    else {
-        Write-Host "警告: TAP驱动安装失败: $installResult" -ForegroundColor Red
+    catch {
+        Write-Host "警告: TAP驱动服务注册/启动失败: $_" -ForegroundColor Red
         Write-Host "ZeroTier可能无法正常工作，网络连接可能受限。" -ForegroundColor Red
         $continueAnyway = Read-Host "是否继续启动ZeroTier? (Y/N)"
-
         if ($continueAnyway -ne "Y" -and $continueAnyway -ne "y") {
             Write-Host "操作已取消。" -ForegroundColor Red
             exit 1
@@ -406,30 +532,97 @@ try {
 
     # 获取并显示节点状态
     Write-Host "`n正在获取节点状态..." -ForegroundColor Yellow
-    $nodeStatus = & "$zerotierExe" -q -D"$dataPath" "info" 2>&1
+    try {
+        $nodeStatus = & "$zerotierExe" -q -D"$dataPath" "info" 2>&1
 
-    if ($nodeStatus -match "\d{10}") {
-        Write-Host "节点已运行，ID: $nodeStatus" -ForegroundColor Green
+        # 将结果转换为字符串以确保一致处理
+        $nodeStatusStr = $nodeStatus | Out-String
+        Write-Host "原始状态: $nodeStatusStr" -ForegroundColor Gray
 
-        # 显示已加入的网络
-        Write-Host "`n已加入的网络：" -ForegroundColor Cyan
-        $networks = & "$zerotierExe" -q -D"$dataPath" "listnetworks" 2>&1
+        # 检查是否有200状态码表示成功
+        if ($nodeStatusStr -match "200") {
+            Write-Host "ZeroTier服务启动成功" -ForegroundColor Green
 
-        if ($networks -match "OK") {
-            $networksFormatted = $networks -replace "^200 listnetworks ", "" | ForEach-Object { $_ -split " " | Select-Object -First 1 }
-            foreach ($network in $networksFormatted) {
-                if ($network -match "^[0-9a-f]{16}$") {
-                    Write-Host "- $network" -ForegroundColor Green
-                }
+            # 尝试提取节点ID和状态（如果可用）
+            if ($nodeStatusStr -match "200 info (\w+)") {
+                $nodeId = $Matches[1]
+                Write-Host "节点ID: $nodeId" -ForegroundColor Cyan
+            }
+
+            # 检查各种可能的状态
+            if ($nodeStatusStr -match "ONLINE") {
+                Write-Host "节点状态: ONLINE (已连接)" -ForegroundColor Green
+                Write-Host "节点已成功连接到ZeroTier网络！" -ForegroundColor Green
+            }
+            elseif ($nodeStatusStr -match "TUNNELED") {
+                Write-Host "节点状态: TUNNELED (通过隧道连接)" -ForegroundColor Green
+                Write-Host "节点已成功通过隧道连接到ZeroTier网络！" -ForegroundColor Green
+            }
+            elseif ($nodeStatusStr -match "OFFLINE") {
+                Write-Host "节点状态: OFFLINE (离线)" -ForegroundColor Yellow
+                Write-Host "节点服务已启动，但尚未连接到网络。" -ForegroundColor Yellow
+            }
+            else {
+                Write-Host "节点状态: 未知" -ForegroundColor Yellow
+                Write-Host "节点状态未明确显示，服务已启动但可能需要检查网络设置。" -ForegroundColor Yellow
             }
         }
         else {
-            Write-Host "尚未加入任何网络" -ForegroundColor Yellow
+            Write-Host "警告: 无法确认ZeroTier服务是否正常启动" -ForegroundColor Red
+        }
+
+        # 显示已加入的网络，完全重写这部分，避免使用数组索引
+        Write-Host "`n已加入的网络：" -ForegroundColor Cyan
+        try {
+            $networks = & "$zerotierExe" -q -D"$dataPath" "listnetworks" 2>&1
+
+            # 转换为字符串便于处理
+            $networksStr = $networks | Out-String
+            Write-Host "原始网络列表: $networksStr" -ForegroundColor Gray
+
+            # 拆分成行来逐行处理
+            $networkLines = $networksStr -split "`n"
+            $foundNetwork = $false
+
+            foreach ($line in $networkLines) {
+                if ([string]::IsNullOrEmpty($line)) { continue }
+
+                if ($line -match "200 listnetworks\s+([0-9a-f]+)") {
+                    $foundNetwork = $true
+                    $networkId = $Matches[1]
+                    Write-Host "`n- 网络ID: $networkId" -ForegroundColor Green
+
+                    # 尝试提取更多信息，但避免使用索引访问
+                    if ($line -match "200 listnetworks\s+[0-9a-f]+\s+(\S+)") {
+                        $networkName = $Matches[1]
+                        Write-Host "  名称: $networkName" -ForegroundColor Green
+                    }
+
+                    # 查找状态信息
+                    if ($line -match "OK|PUBLIC|PRIVATE") {
+                        Write-Host "  状态: 已连接" -ForegroundColor Green
+                    }
+
+                    # 查找IP信息
+                    if ($line -match "(\d+\.\d+\.\d+\.\d+/\d+)") {
+                        $ip = $Matches[1]
+                        Write-Host "  IP地址: $ip" -ForegroundColor Green
+                    }
+                }
+            }
+
+            if (-not $foundNetwork) {
+                Write-Host "尚未加入任何网络" -ForegroundColor Yellow
+            }
+        }
+        catch {
+            Write-Host "获取网络列表失败: $_" -ForegroundColor Red
+            Write-Host "尚未加入任何网络或网络信息获取失败" -ForegroundColor Yellow
         }
     }
-    else {
-        Write-Host "警告: 无法获取节点状态，节点可能未正确启动" -ForegroundColor Red
-        Write-Host "原始输出: $nodeStatus" -ForegroundColor Red
+    catch {
+        Write-Host "获取节点状态失败: $_" -ForegroundColor Red
+        Write-Host "无法确定节点状态，请检查ZeroTier服务是否正常启动" -ForegroundColor Red
     }
 
     # 显示使用信息

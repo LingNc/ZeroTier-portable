@@ -5,5 +5,5 @@
 !**/*.ps1
 !**/*.exe
 !**/*.bat
-!bin/tap-driver/*
+!data/*zttap300*
 .vscode/
