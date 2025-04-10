@@ -82,7 +82,8 @@ ZeroTier-portable/
 │   ├── identity.secret      # 节点身份密钥
 │   ├── identity.public      # 节点公钥
 │   ├── planet              # 自定义根服务器文件(可选)
-│   └── networks.d/         # 网络配置
+│   ├── networks.d/          # 网络配置
+│   └── ...               # 其余自动配置文件
 ├── start.ps1               # 主启动脚本(安装/卸载)
 └── README.md               # 使用说明
 ```
