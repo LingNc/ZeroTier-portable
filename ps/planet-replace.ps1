@@ -1,11 +1,8 @@
-# ZeroTier便携版Planet文件替换工具
+﻿# ZeroTier便携版Planet文件替换工具
 # 此脚本用于替换ZeroTier的Planet文件，支持从网络下载或使用本地文件
 # 作者: GitHub Copilot
-# 版本: 1.1.0
+# 版本: 1.1.1
 # 日期: 2025-04-10
-
-# 需要管理员权限
-#Requires -RunAsAdministrator
 
 # 参数定义
 param (
@@ -13,12 +10,43 @@ param (
     [switch]$h = $false
 )
 
+# 检查管理员权限并自动提升
+$currentPrincipal = New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())
+$isAdmin = $currentPrincipal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+
+# 如果没有管理员权限，则使用提升的方式重新启动
+if (-not $isAdmin) {
+    Write-Host "需要管理员权限运行此脚本，正在请求权限..." -ForegroundColor Yellow
+
+    # 创建一个启动对象
+    $psi = New-Object System.Diagnostics.ProcessStartInfo "PowerShell"
+    $psi.Arguments = "-NoProfile -ExecutionPolicy Bypass -File `"$PSCommandPath`""
+    if ($args.Count -gt 0) { $psi.Arguments += " " + ($args -join " ") }
+    $psi.Verb = "runas"  # 请求提升权限
+    $psi.WorkingDirectory = Get-Location
+    $psi.WindowStyle = 'Normal'  # 使用正常窗口
+
+    # 启动进程
+    try {
+        $p = [System.Diagnostics.Process]::Start($psi)
+        # 等待进程完成
+        $p.WaitForExit()
+        exit $p.ExitCode  # 使用子进程的退出代码
+    }
+    catch {
+        Write-Host "获取管理员权限失败: $_" -ForegroundColor Red
+        Read-Host "按Enter退出"
+        exit 1
+    }
+    exit
+}
+
 # 显示帮助信息
 function Show-Help {
     Write-Host @"
 ===================================================
       ZeroTier Planet文件替换工具 - 帮助信息
-      版本: 1.1.0
+      版本: 1.1.1
 ===================================================
 
 描述:
@@ -53,10 +81,11 @@ if ($help -or $h) {
 }
 
 # 显示标题
+Clear-Host
 Write-Host @"
 ===================================================
       ZeroTier 便携版 Planet 文件替换工具
-      版本: 1.1.0
+      版本: 1.1.1
       日期: 2025-04-10
 ===================================================
 "@ -ForegroundColor Cyan
@@ -84,15 +113,31 @@ if (-not (Test-Path $dataPath)) {
     New-Item -ItemType Directory -Path $dataPath -Force | Out-Null
 }
 
-# 菜单选择
-Write-Host "`n请选择 Planet 文件来源:" -ForegroundColor Yellow
-Write-Host "1. 从网络下载" -ForegroundColor Green
-Write-Host "2. 使用本地文件" -ForegroundColor Green
-Write-Host "3. 查看当前Planet信息" -ForegroundColor Green
-Write-Host "4. 恢复默认Planet" -ForegroundColor Green
-Write-Host "5. 退出" -ForegroundColor Red
+# 显示菜单函数
+function Show-Menu {
+    Clear-Host
+    Write-Host @"
+===================================================
+      ZeroTier 便携版 Planet 文件替换工具
+      版本: 1.1.1
+      日期: 2025-04-10
+===================================================
+"@ -ForegroundColor Cyan
 
-$choice = Read-Host "`n请输入选项 (1-5)"
+    Write-Host "`n请选择 Planet 文件来源:" -ForegroundColor Yellow
+    Write-Host "1. 从网络下载" -ForegroundColor Green
+    Write-Host "2. 使用本地文件" -ForegroundColor Green
+    Write-Host "3. 查看当前Planet信息" -ForegroundColor Green
+    Write-Host "4. 恢复默认Planet" -ForegroundColor Green
+    Write-Host "5. 退出" -ForegroundColor Red
+
+    $choice = Read-Host "`n请输入选项 (1-5) [默认:5]"
+    # 如果用户没有输入，默认选择退出
+    if ([string]::IsNullOrEmpty($choice)) {
+        return "5"
+    }
+    return $choice
+}
 
 # 查看当前Planet信息
 function Show-PlanetInfo {
@@ -146,174 +191,197 @@ function Restore-DefaultPlanet {
     }
 }
 
-# 处理菜单选择
-switch ($choice) {
-    "1" { # 从网络下载
-        $downloadUrl = Read-Host "请输入Planet文件的下载URL"
+# 从网络下载Planet文件
+function Download-PlanetFile {
+    $downloadUrl = Read-Host "请输入Planet文件的下载URL"
 
-        # 简单验证URL格式
-        if (-not ($downloadUrl -match "^https?://")) {
-            Write-Host "错误: URL必须以http://或https://开头" -ForegroundColor Red
-            Read-Host "按Enter退出"
-            exit 1
-        }
+    # 简单验证URL格式
+    if (-not ($downloadUrl -match "^https?://")) {
+        Write-Host "错误: URL必须以http://或https://开头" -ForegroundColor Red
+        Read-Host "按Enter返回主菜单"
+        return
+    }
 
-        # 设置临时文件
-        $timestamp = Get-Date -Format "yyyyMMdd-HHmmss"
-        $tempFile = Join-Path -Path $env:TEMP -ChildPath "zerotier-planet-$timestamp"
+    # 设置临时文件
+    $timestamp = Get-Date -Format "yyyyMMdd-HHmmss"
+    $tempFile = Join-Path -Path $env:TEMP -ChildPath "zerotier-planet-$timestamp"
 
-        # 下载文件
-        Write-Host "正在从 $downloadUrl 下载文件..." -ForegroundColor Yellow
+    # 下载文件
+    Write-Host "正在从 $downloadUrl 下载文件..." -ForegroundColor Yellow
+    try {
+        Invoke-WebRequest -Uri $downloadUrl -OutFile $tempFile -ErrorAction Stop
+    }
+    catch {
+        Write-Host "下载文件失败: $_" -ForegroundColor Red
+        if (Test-Path $tempFile) { Remove-Item -Path $tempFile -Force }
+        Read-Host "按Enter返回主菜单"
+        return
+    }
+
+    # 检查下载文件是否为空
+    if ((Get-Item $tempFile).Length -eq 0) {
+        Write-Host "错误: 下载的文件为空!" -ForegroundColor Red
+        Remove-Item -Path $tempFile -Force
+        Read-Host "按Enter返回主菜单"
+        return
+    }
+
+    Write-Host "文件下载完成，准备替换..." -ForegroundColor Green
+
+    # 备份现有的Planet文件(如果存在)
+    if (Test-Path $planetFile) {
+        $backupFile = "$planetFile.bak-$timestamp"
         try {
-            Invoke-WebRequest -Uri $downloadUrl -OutFile $tempFile -ErrorAction Stop
+            Copy-Item -Path $planetFile -Destination $backupFile -Force
+            Write-Host "已备份现有Planet文件到: $backupFile" -ForegroundColor Green
         }
         catch {
-            Write-Host "下载文件失败: $_" -ForegroundColor Red
-            if (Test-Path $tempFile) { Remove-Item -Path $tempFile -Force }
-            Read-Host "按Enter退出"
-            exit 1
+            Write-Host "备份文件失败，但将继续执行: $_" -ForegroundColor Yellow
         }
+    }
 
-        # 检查下载文件是否为空
-        if ((Get-Item $tempFile).Length -eq 0) {
-            Write-Host "错误: 下载的文件为空!" -ForegroundColor Red
+    # 停止可能正在运行的ZeroTier进程
+    $processes = Get-Process -Name "zerotier-one*", "ZeroTier One" -ErrorAction SilentlyContinue
+    if ($processes) {
+        Write-Host "正在停止ZeroTier进程..." -ForegroundColor Yellow
+        $processes | ForEach-Object {
+            try {
+                $_.Kill()
+                $_.WaitForExit(5000)
+            }
+            catch {
+                Write-Host "无法关闭进程: $_" -ForegroundColor Red
+            }
+        }
+    }
+
+    # 替换Planet文件
+    try {
+        Copy-Item -Path $tempFile -Destination $planetFile -Force
+        Write-Host "Planet文件已成功替换!" -ForegroundColor Green
+    }
+    catch {
+        Write-Host "替换Planet文件失败: $_" -ForegroundColor Red
+        Read-Host "按Enter返回主菜单"
+        return
+    }
+    finally {
+        # 清理临时文件
+        if (Test-Path $tempFile) {
             Remove-Item -Path $tempFile -Force
-            Read-Host "按Enter退出"
-            exit 1
         }
+    }
 
-        Write-Host "文件下载完成，准备替换..." -ForegroundColor Green
-
-        # 备份现有的Planet文件(如果存在)
-        if (Test-Path $planetFile) {
-            $backupFile = "$planetFile.bak-$timestamp"
-            try {
-                Copy-Item -Path $planetFile -Destination $backupFile -Force
-                Write-Host "已备份现有Planet文件到: $backupFile" -ForegroundColor Green
-            }
-            catch {
-                Write-Host "备份文件失败，但将继续执行: $_" -ForegroundColor Yellow
-            }
-        }
-
-        # 停止可能正在运行的ZeroTier进程
-        $processes = Get-Process -Name "zerotier-one*", "ZeroTier One" -ErrorAction SilentlyContinue
-        if ($processes) {
-            Write-Host "正在停止ZeroTier进程..." -ForegroundColor Yellow
-            $processes | ForEach-Object {
-                try {
-                    $_.Kill()
-                    $_.WaitForExit(5000)
-                }
-                catch {
-                    Write-Host "无法关闭进程: $_" -ForegroundColor Red
-                }
-            }
-        }
-
-        # 替换Planet文件
-        try {
-            Copy-Item -Path $tempFile -Destination $planetFile -Force
-            Write-Host "Planet文件已成功替换!" -ForegroundColor Green
-        }
-        catch {
-            Write-Host "替换Planet文件失败: $_" -ForegroundColor Red
-            Read-Host "按Enter退出"
-            exit 1
-        }
-        finally {
-            # 清理临时文件
-            if (Test-Path $tempFile) {
-                Remove-Item -Path $tempFile -Force
-            }
-        }
-
-        Write-Host @"
+    Write-Host @"
 
 Planet文件已成功替换!
 如需启动ZeroTier，请运行根目录下的 start.ps1 脚本。
 "@ -ForegroundColor Green
-    }
-
-    "2" { # 使用本地文件
-        $localFile = Read-Host "请输入本地Planet文件的完整路径"
-
-        if (-not (Test-Path $localFile)) {
-            Write-Host "错误: 文件不存在: $localFile" -ForegroundColor Red
-            Read-Host "按Enter退出"
-            exit 1
-        }
-
-        if ((Get-Item $localFile).Length -eq 0) {
-            Write-Host "错误: 文件为空: $localFile" -ForegroundColor Red
-            Read-Host "按Enter退出"
-            exit 1
-        }
-
-        # 生成时间戳
-        $timestamp = Get-Date -Format "yyyyMMdd-HHmmss"
-
-        # 备份现有的Planet文件(如果存在)
-        if (Test-Path $planetFile) {
-            $backupFile = "$planetFile.bak-$timestamp"
-            try {
-                Copy-Item -Path $planetFile -Destination $backupFile -Force
-                Write-Host "已备份现有Planet文件到: $backupFile" -ForegroundColor Green
-            }
-            catch {
-                Write-Host "备份文件失败，但将继续执行: $_" -ForegroundColor Yellow
-            }
-        }
-
-        # 停止可能正在运行的ZeroTier进程
-        $processes = Get-Process -Name "zerotier-one*", "ZeroTier One" -ErrorAction SilentlyContinue
-        if ($processes) {
-            Write-Host "正在停止ZeroTier进程..." -ForegroundColor Yellow
-            $processes | ForEach-Object {
-                try {
-                    $_.Kill()
-                    $_.WaitForExit(5000)
-                }
-                catch {
-                    Write-Host "无法关闭进程: $_" -ForegroundColor Red
-                }
-            }
-        }
-
-        # 替换Planet文件
-        try {
-            Copy-Item -Path $localFile -Destination $planetFile -Force
-            Write-Host "Planet文件已成功替换!" -ForegroundColor Green
-        }
-        catch {
-            Write-Host "替换Planet文件失败: $_" -ForegroundColor Red
-            Read-Host "按Enter退出"
-            exit 1
-        }
-
-        Write-Host @"
-
-Planet文件已成功替换!
-如需启动ZeroTier，请运行根目录下的 start.ps1 脚本。
-"@ -ForegroundColor Green
-    }
-
-    "3" { # 查看当前Planet信息
-        Show-PlanetInfo
-    }
-
-    "4" { # 恢复默认Planet
-        Restore-DefaultPlanet
-    }
-
-    "5" { # 退出
-        Write-Host "退出程序" -ForegroundColor Yellow
-        exit 0
-    }
-
-    default {
-        Write-Host "无效选择，请重新运行脚本" -ForegroundColor Red
-    }
 }
 
-Read-Host "`n按Enter退出"
+# 使用本地文件替换Planet
+function Use-LocalPlanetFile {
+    $localFile = Read-Host "请输入本地Planet文件的完整路径"
+
+    if (-not (Test-Path $localFile)) {
+        Write-Host "错误: 文件不存在: $localFile" -ForegroundColor Red
+        Read-Host "按Enter返回主菜单"
+        return
+    }
+
+    if ((Get-Item $localFile).Length -eq 0) {
+        Write-Host "错误: 文件为空: $localFile" -ForegroundColor Red
+        Read-Host "按Enter返回主菜单"
+        return
+    }
+
+    # 生成时间戳
+    $timestamp = Get-Date -Format "yyyyMMdd-HHmmss"
+
+    # 备份现有的Planet文件(如果存在)
+    if (Test-Path $planetFile) {
+        $backupFile = "$planetFile.bak-$timestamp"
+        try {
+            Copy-Item -Path $planetFile -Destination $backupFile -Force
+            Write-Host "已备份现有Planet文件到: $backupFile" -ForegroundColor Green
+        }
+        catch {
+            Write-Host "备份文件失败，但将继续执行: $_" -ForegroundColor Yellow
+        }
+    }
+
+    # 停止可能正在运行的ZeroTier进程
+    $processes = Get-Process -Name "zerotier-one*", "ZeroTier One" -ErrorAction SilentlyContinue
+    if ($processes) {
+        Write-Host "正在停止ZeroTier进程..." -ForegroundColor Yellow
+        $processes | ForEach-Object {
+            try {
+                $_.Kill()
+                $_.WaitForExit(5000)
+            }
+            catch {
+                Write-Host "无法关闭进程: $_" -ForegroundColor Red
+            }
+        }
+    }
+
+    # 替换Planet文件
+    try {
+        Copy-Item -Path $localFile -Destination $planetFile -Force
+        Write-Host "Planet文件已成功替换!" -ForegroundColor Green
+    }
+    catch {
+        Write-Host "替换Planet文件失败: $_" -ForegroundColor Red
+        Read-Host "按Enter返回主菜单"
+        return
+    }
+
+    Write-Host @"
+
+Planet文件已成功替换!
+如需启动ZeroTier，请运行根目录下的 start.ps1 脚本。
+"@ -ForegroundColor Green
+}
+
+# 主循环
+do {
+    $choice = Show-Menu
+
+    switch ($choice) {
+        "1" {
+            Clear-Host
+            Write-Host "===== 从网络下载Planet文件 =====" -ForegroundColor Cyan
+            Download-PlanetFile
+        }
+        "2" {
+            Clear-Host
+            Write-Host "===== 使用本地Planet文件 =====" -ForegroundColor Cyan
+            Use-LocalPlanetFile
+        }
+        "3" {
+            Clear-Host
+            Write-Host "===== 查看当前Planet信息 =====" -ForegroundColor Cyan
+            Show-PlanetInfo
+        }
+        "4" {
+            Clear-Host
+            Write-Host "===== 恢复默认Planet =====" -ForegroundColor Cyan
+            Restore-DefaultPlanet
+        }
+        "5" {
+            Write-Host "退出程序" -ForegroundColor Yellow
+            exit 0
+        }
+        default {
+            Write-Host "无效选择，将在3秒后返回主菜单..." -ForegroundColor Red
+            Start-Sleep -Seconds 3
+        }
+    }
+
+    # 在每个操作完成后暂停
+    if ($choice -ne "5") {
+        Write-Host "`n操作完成。" -ForegroundColor Green
+        Read-Host "按Enter返回主菜单..."
+    }
+
+} while ($choice -ne "5")

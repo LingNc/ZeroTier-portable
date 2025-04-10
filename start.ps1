@@ -1,16 +1,50 @@
+﻿chcp 65001 # 将编码更改为 UTF-8
 # ZeroTier便携版启动脚本
 # 此脚本用于启动便携版ZeroTier
 # 作者: GitHub Copilot
-# 版本: 1.1.1
+# 版本: 1.1.2
 # 日期: 2025-04-10
-# 版本
-$version="1.1.1"
 
-# 参数定义
+# 参数定义 - 必须在脚本开头定义
 param (
     [switch]$help = $false,
     [switch]$h = $false
 )
+
+# 检查管理员权限并自动提升
+# 获取当前进程信息
+$currentPrincipal = New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())
+$isAdmin = $currentPrincipal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+
+# 如果没有管理员权限，则使用提升的方式重新启动
+if (-not $isAdmin) {
+    Write-Host "需要管理员权限运行此脚本，正在请求权限..." -ForegroundColor Yellow
+
+    # 创建一个启动对象
+    $psi = New-Object System.Diagnostics.ProcessStartInfo "PowerShell"
+    $psi.Arguments = "-NoProfile -ExecutionPolicy Bypass -File `"$PSCommandPath`""
+    if ($args.Count -gt 0) { $psi.Arguments += " " + ($args -join " ") }
+    $psi.Verb = "runas"  # 请求提升权限
+    $psi.WorkingDirectory = Get-Location
+    $psi.WindowStyle = 'Normal'  # 使用正常窗口
+
+    # 启动进程
+    try {
+        $p = [System.Diagnostics.Process]::Start($psi)
+        # 等待进程完成
+        $p.WaitForExit()
+        exit $p.ExitCode  # 使用子进程的退出代码
+    }
+    catch {
+        Write-Host "获取管理员权限失败: $_" -ForegroundColor Red
+        Read-Host "按Enter退出"
+        exit 1
+    }
+    exit
+}
+
+# 版本
+$version="1.1.2"
 
 # 显示帮助信息
 function Show-Help {
@@ -55,7 +89,8 @@ if ($help -or $h) {
     Show-Help
 }
 
-#Requires -RunAsAdministrator
+# 显示管理员权限提示
+Write-Host "以管理员权限运行..." -ForegroundColor Green
 
 # 显示启动标志
 Write-Host @"

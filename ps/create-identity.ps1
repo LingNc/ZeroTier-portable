@@ -1,11 +1,8 @@
-# ZeroTier便携版身份管理脚本
+﻿# ZeroTier便携版身份管理脚本
 # 此脚本用于生成、备份和导入ZeroTier身份
 # 作者: GitHub Copilot
-# 版本: 1.1.1
+# 版本: 1.1.2
 # 日期: 2025-04-10
-
-# 需要管理员权限
-#Requires -RunAsAdministrator
 
 # 参数定义
 param (
@@ -13,12 +10,44 @@ param (
     [switch]$h = $false
 )
 
+# 需要管理员权限
+# 检查管理员权限并自动提升
+$currentPrincipal = New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())
+$isAdmin = $currentPrincipal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+
+# 如果没有管理员权限，则使用提升的方式重新启动
+if (-not $isAdmin) {
+    Write-Host "需要管理员权限运行此脚本，正在请求权限..." -ForegroundColor Yellow
+
+    # 创建一个启动对象
+    $psi = New-Object System.Diagnostics.ProcessStartInfo "PowerShell"
+    $psi.Arguments = "-NoProfile -ExecutionPolicy Bypass -File `"$PSCommandPath`""
+    if ($args.Count -gt 0) { $psi.Arguments += " " + ($args -join " ") }
+    $psi.Verb = "runas"  # 请求提升权限
+    $psi.WorkingDirectory = Get-Location
+    $psi.WindowStyle = 'Normal'  # 使用正常窗口
+
+    # 启动进程
+    try {
+        $p = [System.Diagnostics.Process]::Start($psi)
+        # 等待进程完成
+        $p.WaitForExit()
+        exit $p.ExitCode  # 使用子进程的退出代码
+    }
+    catch {
+        Write-Host "获取管理员权限失败: $_" -ForegroundColor Red
+        Read-Host "按Enter退出"
+        exit 1
+    }
+    exit
+}
+
 # 显示帮助信息
 function Show-Help {
     Write-Host @"
 ===================================================
       ZeroTier 便携版身份管理工具 - 帮助信息
-      版本: 1.1.1
+      版本: 1.1.2
 ===================================================
 
 描述:
@@ -52,10 +81,11 @@ if ($help -or $h) {
 }
 
 # 显示标题
+Clear-Host
 Write-Host @"
 ===================================================
       ZeroTier 便携版身份管理工具
-      版本: 1.1.1
+      版本: 1.1.2
       日期: 2025-04-10
 ===================================================
 "@ -ForegroundColor Cyan
@@ -90,6 +120,15 @@ if (-not (Test-Path $dataPath)) {
 
 # 显示菜单
 function Show-Menu {
+    Clear-Host
+    Write-Host @"
+===================================================
+      ZeroTier 便携版身份管理工具
+      版本: 1.1.2
+      日期: 2025-04-10
+===================================================
+"@ -ForegroundColor Cyan
+
     Write-Host "`n请选择操作:" -ForegroundColor Yellow
     Write-Host "1. 生成新的ZeroTier身份" -ForegroundColor Green
     Write-Host "2. 导入现有身份文件" -ForegroundColor Green
@@ -97,7 +136,11 @@ function Show-Menu {
     Write-Host "4. 查看当前身份" -ForegroundColor Green
     Write-Host "5. 退出" -ForegroundColor Red
 
-    $choice = Read-Host "`n请输入选择 (1-5)"
+    $choice = Read-Host "`n请输入选择 (1-5) [默认:5]"
+    # 如果用户没有输入，默认选择退出
+    if ([string]::IsNullOrEmpty($choice)) {
+        return "5"
+    }
     return $choice
 }
 
@@ -315,17 +358,37 @@ do {
     $choice = Show-Menu
 
     switch ($choice) {
-        "1" { New-ZTIdentity }
-        "2" { Import-ZTIdentity }
-        "3" { Backup-ZTIdentity }
-        "4" { Show-ZTIdentity }
+        "1" {
+            Clear-Host
+            Write-Host "===== 生成新的ZeroTier身份 =====" -ForegroundColor Cyan
+            New-ZTIdentity
+        }
+        "2" {
+            Clear-Host
+            Write-Host "===== 导入现有身份文件 =====" -ForegroundColor Cyan
+            Import-ZTIdentity
+        }
+        "3" {
+            Clear-Host
+            Write-Host "===== 备份当前身份 =====" -ForegroundColor Cyan
+            Backup-ZTIdentity
+        }
+        "4" {
+            Clear-Host
+            Write-Host "===== 查看当前身份 =====" -ForegroundColor Cyan
+            Show-ZTIdentity
+        }
         "5" { Write-Host "退出程序" -ForegroundColor Yellow; exit }
-        default { Write-Host "无效选择，请重试" -ForegroundColor Red }
+        default {
+            Write-Host "无效选择，将在3秒后返回主菜单..." -ForegroundColor Red
+            Start-Sleep -Seconds 3
+        }
     }
 
     # 在每个操作完成后暂停
     if ($choice -ne "5") {
-        Read-Host "`n按Enter继续..."
+        Write-Host "`n操作完成。" -ForegroundColor Green
+        Read-Host "按Enter返回主菜单..."
     }
 
 } while ($choice -ne "5")
