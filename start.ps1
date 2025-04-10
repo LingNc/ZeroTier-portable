@@ -1,8 +1,10 @@
 # ZeroTier便携版启动脚本
 # 此脚本用于启动便携版ZeroTier
 # 作者: GitHub Copilot
-# 版本: 1.1.0
+# 版本: 1.1.1
 # 日期: 2025-04-10
+# 版本
+$version="1.1.1"
 
 # 参数定义
 param (
@@ -15,7 +17,7 @@ function Show-Help {
     Write-Host @"
 ===================================================
             ZeroTier 便携版 帮助信息
-            版本: 1.1.0
+            版本: $version
 ===================================================
 
 描述:
@@ -59,7 +61,7 @@ if ($help -or $h) {
 Write-Host @"
 ===================================================
          ZeroTier 便携版启动脚本
-         版本: 1.1.0
+         版本: $version
          日期: 2025-04-10
 ===================================================
 "@ -ForegroundColor Cyan
@@ -218,12 +220,6 @@ $cliContent = @"
 :: 自动将命令转发到便携版ZeroTier安装位置
 :: 版本: 1.0.0
 
-:: 检查是否使用replace参数
-if "%1"=="replace" (
-    powershell.exe -ExecutionPolicy Bypass -File "$planetReplacePs1"
-    exit /b %errorlevel%
-)
-
 :: 正常调用zerotier-cli
 SET ZT_HOME=$dataPath
 "$binPath\zerotier-cli.bat" %*
@@ -235,12 +231,6 @@ $idtoolContent = @"
 :: ZeroTier IDTool包装器
 :: 自动将命令转发到便携版ZeroTier安装位置
 :: 版本: 1.0.0
-
-:: 检查是否使用inter参数（交互式身份管理）
-if "%1"=="inter" (
-    powershell.exe -ExecutionPolicy Bypass -File "$createIdentityPs1"
-    exit /b %errorlevel%
-)
 
 :: 正常调用zerotier-idtool
 "$binPath\zerotier-idtool.bat" %*

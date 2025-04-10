@@ -1,10 +1,10 @@
 @ECHO OFF
 SETLOCAL
-:: ZeroTier IDTool便携版包装器
-:: 版本: 1.1.0
-:: 日期: 2025-04-10
+:: ZeroTier IDTool Portable Wrapper
+:: Version: 1.2.0
+:: Date: 2025-04-10
 
-:: 检查是否需要显示帮助
+:: Check if help is needed
 IF "%1"=="help" (
     GOTO :SHOWHELP
 )
@@ -12,41 +12,41 @@ IF "%1"=="-h" (
     GOTO :SHOWHELP
 )
 
-:: 检查是否使用inter参数（交互式身份管理）
+:: Check if using inter parameter (interactive identity management)
 IF "%1"=="inter" (
-    ECHO 启动交互式身份管理工具...
+    ECHO Starting Interactive Identity Management Tool...
     powershell.exe -ExecutionPolicy Bypass -File "%~dp0..\ps\create-identity.ps1"
     EXIT /B %ERRORLEVEL%
 )
 
-:: 使用相对路径调用zerotier-one_x64.exe，-i不需要指定数据目录
+:: Call zerotier-one_x64.exe using relative path, no need to specify data directory with -i
 "%~dp0zerotier-one_x64.exe" -i %*
 GOTO :EOF
 
 :SHOWHELP
 ECHO ===================================================
-ECHO      ZeroTier IDTool 便携版 - 帮助信息
-ECHO      版本: 1.1.0
+ECHO      ZeroTier IDTool Portable - Help
+ECHO      Version: 1.2.0
 ECHO ===================================================
 ECHO.
-ECHO 描述:
-ECHO     ZeroTier身份工具，用于管理ZeroTier身份和密钥。
+ECHO Description:
+ECHO     ZeroTier identity tool for managing ZeroTier identities and keys.
 ECHO.
-ECHO 用法:
-ECHO     zerotier-idtool [命令] [参数]
-ECHO     zerotier-idtool help 或 -h    显示此帮助信息
-ECHO     zerotier-idtool inter         启动交互式身份管理工具
+ECHO Usage:
+ECHO     zerotier-idtool [command] [arguments]
+ECHO     zerotier-idtool help or -h    Show this help information
+ECHO     zerotier-idtool inter         Launch interactive identity management tool
 ECHO.
-ECHO 常用命令:
-ECHO     generate [文件路径] [公钥文件路径]   - 生成新身份
-ECHO     validate [身份文件]                 - 验证身份文件
-ECHO     getpublic [身份文件]                - 从私钥获取公钥
-ECHO     sign [身份文件] [文件]              - 使用身份签名文件
-ECHO     verify [身份文件] [文件] [签名]      - 验证签名
-ECHO     initmoon [第一个种子的身份公钥]      - 初始化moon
-ECHO     genmoon [moon json文件]             - 生成moon
+ECHO Common Commands:
+ECHO     generate [file_path] [public_key_path]   - Generate new identity
+ECHO     validate [identity_file]                 - Validate identity file
+ECHO     getpublic [identity_file]                - Get public key from private key
+ECHO     sign [identity_file] [file]              - Sign file with identity
+ECHO     verify [identity_file] [file] [signature] - Verify signature
+ECHO     initmoon [first_seed_identity_public]    - Initialize moon
+ECHO     genmoon [moon_json_file]                 - Generate moon
 ECHO.
-ECHO 注意:
-ECHO     命令行参数直接传递给ZeroTier，完全兼容官方ZeroTier IDTool。
+ECHO Note:
+ECHO     Command line arguments are passed directly to ZeroTier, fully compatible with official ZeroTier IDTool.
 ECHO.
 EXIT /B 0

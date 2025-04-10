@@ -1,10 +1,10 @@
 @ECHO OFF
 SETLOCAL
-:: ZeroTier CLI便携版包装器
-:: 版本: 1.1.0
-:: 日期: 2025-04-10
+:: ZeroTier CLI Portable Wrapper
+:: Version: 1.2.0
+:: Date: 2025-04-10
 
-:: 检查是否需要显示帮助
+:: Check if help is needed
 IF "%1"=="help" (
     GOTO :SHOWHELP
 )
@@ -12,47 +12,47 @@ IF "%1"=="-h" (
     GOTO :SHOWHELP
 )
 
-:: 检查是否使用replace参数
+:: Check if using replace parameter
 IF "%1"=="replace" (
-    ECHO 启动Planet替换工具...
+    ECHO Starting Planet Replacement Tool...
     powershell.exe -ExecutionPolicy Bypass -File "%~dp0..\ps\planet-replace.ps1"
     EXIT /B %ERRORLEVEL%
 )
 
-:: 设置ZeroTier主目录为相对路径下的data目录
+:: Set ZeroTier home directory to data folder in relative path
 SET "ZT_HOME=%~dp0..\data"
 
-:: 使用相对路径调用zerotier-one_x64.exe，使用-q和-D参数
+:: Call zerotier-one_x64.exe using relative path with -q and -D parameters
 "%~dp0zerotier-one_x64.exe" -q -D"%ZT_HOME%" %*
 GOTO :EOF
 
 :SHOWHELP
 ECHO ===================================================
-ECHO         ZeroTier CLI 便携版 - 帮助信息
-ECHO         版本: 1.1.0
+ECHO         ZeroTier CLI Portable - Help
+ECHO         Version: 1.2.0
 ECHO ===================================================
 ECHO.
-ECHO 描述:
-ECHO     ZeroTier命令行界面工具，用于管理ZeroTier网络和连接。
+ECHO Description:
+ECHO     ZeroTier command line interface tool for managing ZeroTier networks and connections.
 ECHO.
-ECHO 用法:
-ECHO     zerotier-cli [命令] [参数]
-ECHO     zerotier-cli help 或 -h    显示此帮助信息
-ECHO     zerotier-cli replace       启动Planet替换工具
+ECHO Usage:
+ECHO     zerotier-cli [command] [arguments]
+ECHO     zerotier-cli help or -h    Show this help information
+ECHO     zerotier-cli replace       Launch Planet replacement tool
 ECHO.
-ECHO 常用命令:
-ECHO     info                    - 显示节点信息
-ECHO     listnetworks            - 列出所有已加入的网络
-ECHO     listpeers               - 列出所有对等节点
-ECHO     peers                   - 美化格式显示对等节点
-ECHO     join [网络ID]           - 加入网络
-ECHO     leave [网络ID]          - 离开网络
-ECHO     set [网络ID] [设置]     - 设置网络选项
-ECHO     listmoons               - 列出所有moons(联邦根服务器集)
-ECHO     orbit [world ID] [seed] - 加入moon
-ECHO     deorbit [world ID]      - 离开moon
+ECHO Common Commands:
+ECHO     info                    - Display node information
+ECHO     listnetworks            - List all joined networks
+ECHO     listpeers               - List all peers
+ECHO     peers                   - List all peers (prettier format)
+ECHO     join [network ID]       - Join a network
+ECHO     leave [network ID]      - Leave a network
+ECHO     set [network ID] [setting] - Set a network option
+ECHO     listmoons               - List moons (federated root sets)
+ECHO     orbit [world ID] [seed] - Join a moon
+ECHO     deorbit [world ID]      - Leave a moon
 ECHO.
-ECHO 注意:
-ECHO     命令行参数直接传递给ZeroTier，完全兼容官方ZeroTier CLI。
+ECHO Note:
+ECHO     Command line arguments are passed directly to ZeroTier, fully compatible with official ZeroTier CLI.
 ECHO.
 EXIT /B 0
