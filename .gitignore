@@ -6,4 +6,5 @@
 !**/*.exe
 !**/*.bat
 !bin/tap-driver/*
+!*.json
 .vscode/

@@ -1,0 +1,24 @@
+﻿{
+    "inputFile": "main.ps1",
+    "outputFile": "ZeroTier-portable.exe",
+    "versionInfo": {
+        "fileVersion": "1.2.0.0",
+        "productVersion": "1.2.0.0",
+        "company": "LingNc",
+        "product": "ZeroTier便携版",
+        "description": "ZeroTier 便携版",
+        "copyright": "Copyright © 2025 LingNc",
+        "trademark": "ZeroTier便携版"
+    },
+    "options": {
+        "requireAdmin": true,
+        "noConsole": false,
+        "supportOS": true,
+        "DPIAware": true
+    },
+    "includes": [
+        "bin\\*",
+        "bin\\tap-driver\\*",
+        "ps\\*"
+    ]
+}
