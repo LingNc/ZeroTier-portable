@@ -1,0 +1,8 @@
+*
+!.gitignore
+!*.md
+!**/*.ps1
+!**/*.exe
+!**/*.bat
+!bin/tap-driver.vscode/
+.vscode/
