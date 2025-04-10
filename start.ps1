@@ -1,6 +1,6 @@
 ﻿# ZeroTier便携版启动脚本
 # 此脚本用于启动便携版ZeroTier
-# 作者: GitHub Copilot
+# 作者: LingNc
 # 版本: 1.1.4
 # 日期: 2025-04-10
 
@@ -17,8 +17,6 @@ $isAdmin = $currentPrincipal.IsInRole([Security.Principal.WindowsBuiltInRole]::A
 
 # 如果没有管理员权限，则使用提升的方式重新启动
 if (-not $isAdmin) {
-    Write-Host "需要管理员权限运行此脚本，正在请求权限..." -ForegroundColor Yellow
-
     # 创建一个启动对象
     $psi = New-Object System.Diagnostics.ProcessStartInfo "PowerShell"
     $psi.Arguments = "-NoProfile -ExecutionPolicy Bypass -File `"$PSCommandPath`""
@@ -29,17 +27,16 @@ if (-not $isAdmin) {
 
     # 启动进程
     try {
+        Write-Host "需要管理员权限运行此脚本，正在请求权限..." -ForegroundColor Yellow
         $p = [System.Diagnostics.Process]::Start($psi)
-        # 等待进程完成
-        $p.WaitForExit()
-        exit $p.ExitCode  # 使用子进程的退出代码
+        # 立即退出当前进程，避免显示两个窗口
+        exit
     }
     catch {
         Write-Host "获取管理员权限失败: $_" -ForegroundColor Red
         Read-Host "按Enter退出"
         exit 1
     }
-    exit
 }
 
 # 版本
@@ -153,11 +150,11 @@ Write-Host "1. 安装 ZeroTier" -ForegroundColor Green
 Write-Host "2. 卸载 ZeroTier" -ForegroundColor Yellow
 Write-Host "3. 退出" -ForegroundColor Red
 
-$installChoice = Read-Host "`n请输入选择 (1-3) [默认:3]"
+$installChoice = Read-Host "`n请输入选择 (1-3) [默认:1]"
 
 # 如果用户没有输入，默认选择安装
 if ([string]::IsNullOrEmpty($installChoice)) {
-    $installChoice = "3"
+    $installChoice = "1"
 }
 
 # 根据用户选择执行相应操作
@@ -624,7 +621,8 @@ try {
         Write-Host "获取节点状态失败: $_" -ForegroundColor Red
         Write-Host "无法确定节点状态，请检查ZeroTier服务是否正常启动" -ForegroundColor Red
     }
-
+    Start-Sleep -Seconds 4
+    Clear-Host
     # 显示使用信息
     Write-Host @"
 

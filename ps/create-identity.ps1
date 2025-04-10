@@ -1,6 +1,6 @@
 ﻿# ZeroTier便携版身份管理脚本
 # 此脚本用于生成、备份和导入ZeroTier身份
-# 作者: GitHub Copilot
+# 作者: LingNc
 # 版本: 1.1.5
 # 日期: 2025-04-10
 

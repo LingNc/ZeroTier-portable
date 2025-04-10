@@ -1,6 +1,6 @@
 ﻿# ZeroTier便携版Planet文件替换工具
 # 此脚本用于替换ZeroTier的Planet文件，支持从网络下载或使用本地文件
-# 作者: GitHub Copilot
+# 作者: LingNc
 # 版本: 1.1.2
 # 日期: 2025-04-10
 
