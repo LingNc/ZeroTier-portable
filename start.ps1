@@ -1,8 +1,57 @@
 # ZeroTier便携版启动脚本
 # 此脚本用于启动便携版ZeroTier
 # 作者: GitHub Copilot
-# 版本: 1.0.0
+# 版本: 1.1.0
 # 日期: 2025-04-10
+
+# 参数定义
+param (
+    [switch]$help = $false,
+    [switch]$h = $false
+)
+
+# 显示帮助信息
+function Show-Help {
+    Write-Host @"
+===================================================
+            ZeroTier 便携版 帮助信息
+            版本: 1.1.0
+===================================================
+
+描述:
+    该脚本用于启动ZeroTier便携版，自动完成身份检查、TAP驱动安装
+    和ZeroTier服务启动过程。
+
+用法:
+    start.ps1 [-help|-h]
+
+参数:
+    -help, -h    显示此帮助信息
+
+功能:
+    1. 检查数据目录并创建必要的子目录
+    2. 检查身份文件是否存在，如不存在则生成新身份
+    3. 检查并安装TAP驱动
+    4. 添加命令行工具到系统环境
+    5. 启动ZeroTier服务
+    6. 显示节点状态和已加入的网络
+
+注意:
+    此脚本需要管理员权限运行
+
+相关命令:
+    zerotier-cli          - ZeroTier网络管理工具
+    zerotier-cli replace  - 启动Planet文件替换工具
+    zerotier-idtool inter - 启动身份管理工具
+
+"@
+    exit 0
+}
+
+# 检查是否显示帮助
+if ($help -or $h) {
+    Show-Help
+}
 
 #Requires -RunAsAdministrator
 
@@ -10,7 +59,7 @@
 Write-Host @"
 ===================================================
          ZeroTier 便携版启动脚本
-         版本: 1.0.0
+         版本: 1.1.0
          日期: 2025-04-10
 ===================================================
 "@ -ForegroundColor Cyan
@@ -180,16 +229,16 @@ SET ZT_HOME=$dataPath
 "$binPath\zerotier-cli.bat" %*
 "@
 
-# zerotier-idtool包装脚本，添加auto参数支持
+# zerotier-idtool包装脚本，添加inter参数支持
 $idtoolContent = @"
 @echo off
 :: ZeroTier IDTool包装器
 :: 自动将命令转发到便携版ZeroTier安装位置
 :: 版本: 1.0.0
 
-:: 检查是否使用auto参数
-if "%1"=="auto" (
-    powershell.exe -ExecutionPolicy Bypass -File "$createIdentityPs1" -auto
+:: 检查是否使用inter参数（交互式身份管理）
+if "%1"=="inter" (
+    powershell.exe -ExecutionPolicy Bypass -File "$createIdentityPs1"
     exit /b %errorlevel%
 )
 
@@ -303,7 +352,7 @@ ZeroTier便携版已启动！
    zerotier-cli replace
 
 要管理身份:
-   zerotier-idtool auto
+   zerotier-idtool inter
 
 要停止ZeroTier:
    关闭此PowerShell窗口或按Ctrl+C

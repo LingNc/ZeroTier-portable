@@ -1,17 +1,62 @@
 # ZeroTier便携版Planet文件替换工具
 # 此脚本用于替换ZeroTier的Planet文件，支持从网络下载或使用本地文件
 # 作者: GitHub Copilot
-# 版本: 1.0.0
+# 版本: 1.1.0
 # 日期: 2025-04-10
 
 # 需要管理员权限
 #Requires -RunAsAdministrator
 
+# 参数定义
+param (
+    [switch]$help = $false,
+    [switch]$h = $false
+)
+
+# 显示帮助信息
+function Show-Help {
+    Write-Host @"
+===================================================
+      ZeroTier Planet文件替换工具 - 帮助信息
+      版本: 1.1.0
+===================================================
+
+描述:
+    该脚本用于管理ZeroTier的Planet文件，允许替换为自定义的根服务器配置。
+    Planet文件决定了ZeroTier网络的根服务器地址，适用于自建或使用第三方根服务器。
+
+用法:
+    planet-replace.ps1 [-help|-h]
+
+参数:
+    -help, -h    显示此帮助信息
+
+功能:
+    1. 从网络下载 - 从提供的URL下载Planet文件并替换
+    2. 使用本地文件 - 从本地文件系统选择Planet文件替换
+    3. 查看当前Planet信息 - 显示当前使用的Planet文件信息
+    4. 恢复默认Planet - 删除自定义Planet文件，使用ZeroTier默认服务器
+
+注意:
+    - 此脚本需要管理员权限运行
+    - 更改Planet服务器会影响网络连接性，请确保使用可信来源的配置
+
+相关命令:
+    也可通过 'zerotier-cli replace' 从任何位置启动此工具
+"@
+    exit 0
+}
+
+# 检查是否显示帮助
+if ($help -or $h) {
+    Show-Help
+}
+
 # 显示标题
 Write-Host @"
 ===================================================
       ZeroTier 便携版 Planet 文件替换工具
-      版本: 1.0.0
+      版本: 1.1.0
       日期: 2025-04-10
 ===================================================
 "@ -ForegroundColor Cyan
