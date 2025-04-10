@@ -1,22 +1,17 @@
 # ZeroTier便携版身份管理脚本
 # 此脚本用于生成、备份和导入ZeroTier身份
 # 作者: GitHub Copilot
-# 版本: 1.0.0
+# 版本: 1.0.1
 # 日期: 2025-04-10
 
 # 需要管理员权限
 #Requires -RunAsAdministrator
 
-# 检查是否有auto参数
-param (
-    [switch]$auto = $false
-)
-
 # 显示标题
 Write-Host @"
 ===================================================
       ZeroTier 便携版身份管理工具
-      版本: 1.0.0
+      版本: 1.0.1
       日期: 2025-04-10
 ===================================================
 "@ -ForegroundColor Cyan
@@ -27,7 +22,6 @@ $scriptPath = Split-Path -Parent $MyInvocation.MyCommand.Path
 $rootPath = Split-Path -Parent $scriptPath
 $binPath = Join-Path -Path $rootPath -ChildPath "bin"
 $dataPath = Join-Path -Path $rootPath -ChildPath "data"
-$planetReplacePs1 = Join-Path -Path $scriptPath -ChildPath "planet-replace.ps1"
 $zerotierExe = Join-Path -Path $binPath -ChildPath "zerotier-one_x64.exe"
 
 # 检查组件是否存在
@@ -67,22 +61,14 @@ function Show-Menu {
 function New-ZTIdentity {
     $identityFile = Join-Path -Path $dataPath -ChildPath "identity.secret"
     $identityPublicFile = Join-Path -Path $dataPath -ChildPath "identity.public"
-    $isNewIdentity = $false
 
     if (Test-Path $identityFile) {
-        if (-not $auto) {
-            Write-Host "警告: 已存在身份文件 $identityFile" -ForegroundColor Yellow
-            $confirm = Read-Host "是否覆盖现有身份? 这将导致节点ID改变! (Y/N)"
+        Write-Host "警告: 已存在身份文件 $identityFile" -ForegroundColor Yellow
+        $confirm = Read-Host "是否覆盖现有身份? 这将导致节点ID改变! (Y/N)"
 
-            if ($confirm -ne "Y" -and $confirm -ne "y") {
-                Write-Host "操作已取消" -ForegroundColor Red
-                return $false
-            }
-        } else {
-            # 在auto模式下，如果已存在身份，则不覆盖
-            Write-Host "在自动模式下检测到现有身份，将使用现有身份继续。" -ForegroundColor Yellow
-            Show-ZTIdentity
-            return $false
+        if ($confirm -ne "Y" -and $confirm -ne "y") {
+            Write-Host "操作已取消" -ForegroundColor Red
+            return
         }
 
         # 备份现有身份
@@ -94,8 +80,6 @@ function New-ZTIdentity {
         Copy-Item -Path $identityPublicFile -Destination $backupPublicFile -Force -ErrorAction SilentlyContinue
 
         Write-Host "已备份现有身份到: $backupFile" -ForegroundColor Green
-    } else {
-        $isNewIdentity = $true
     }
 
     Write-Host "正在生成新的身份..." -ForegroundColor Yellow
@@ -110,12 +94,9 @@ function New-ZTIdentity {
             $nodeId = Get-Content -Path $identityPublicFile -Raw
             Write-Host "节点ID: $nodeId" -ForegroundColor Cyan
         }
-
-        return $isNewIdentity
     }
     catch {
         Write-Host "生成身份文件失败: $_" -ForegroundColor Red
-        return $false
     }
 }
 
@@ -285,73 +266,12 @@ function Show-ZTIdentity {
     }
 }
 
-# 运行Planet替换功能
-function Start-PlanetReplace {
-    # 检查planet-replace.ps1是否存在
-    if (-not (Test-Path $planetReplacePs1)) {
-        Write-Host "错误：无法找到Planet替换脚本: $planetReplacePs1" -ForegroundColor Red
-        Write-Host "将使用默认Planet服务器继续..." -ForegroundColor Yellow
-        return
-    }
-
-    # 启动Planet替换脚本
-    Write-Host "`n启动Planet替换脚本，请按提示操作..." -ForegroundColor Yellow
-    Start-Process powershell.exe -ArgumentList "-ExecutionPolicy Bypass -File `"$planetReplacePs1`"" -Wait -NoNewWindow
-    Write-Host "Planet配置已完成，继续启动过程..." -ForegroundColor Green
-}
-
-# 处理自动模式
-if ($auto) {
-    Write-Host "自动模式：检查身份状态并进行必要操作..." -ForegroundColor Cyan
-    $identityFile = Join-Path -Path $dataPath -ChildPath "identity.secret"
-    $isNewIdentity = $false
-
-    if (-not (Test-Path $identityFile)) {
-        Write-Host "未找到身份文件，自动生成新身份..." -ForegroundColor Yellow
-        $isNewIdentity = New-ZTIdentity
-
-        if ($isNewIdentity) {
-            # 新生成的身份，询问是否配置Planet
-            Write-Host "`n检测到新生成的身份，您可能需要配置自定义Planet服务器。" -ForegroundColor Yellow
-            $replacePlanet = Read-Host "是否需要配置自定义Planet服务器? (Y/N)"
-
-            if ($replacePlanet -eq "Y" -or $replacePlanet -eq "y") {
-                Start-PlanetReplace
-            }
-        }
-    } else {
-        Write-Host "已存在身份文件，正在检查身份信息..." -ForegroundColor Green
-        Show-ZTIdentity
-
-        # 询问是否需要管理Planet
-        $managePlanet = Read-Host "`n是否需要管理Planet配置? (Y/N)"
-        if ($managePlanet -eq "Y" -or $managePlanet -eq "y") {
-            Start-PlanetReplace
-        }
-    }
-
-    # 自动模式下结束前的提示
-    Write-Host "`n身份管理操作已完成，您可以继续使用ZeroTier。" -ForegroundColor Green
-    Read-Host "按Enter键继续..."
-    exit 0
-}
-
-# 主循环 (非自动模式)
+# 主循环
 do {
     $choice = Show-Menu
 
     switch ($choice) {
-        "1" {
-            $isNewIdentity = New-ZTIdentity
-            if ($isNewIdentity) {
-                Write-Host "`n检测到新生成的身份，您可能需要配置自定义Planet服务器。" -ForegroundColor Yellow
-                $replacePlanet = Read-Host "是否需要配置自定义Planet服务器? (Y/N)"
-
-                if ($replacePlanet -eq "Y" -or $replacePlanet -eq "y") {
-                    Start-PlanetReplace
-                }
-            }
-        }
+        "1" { New-ZTIdentity }
         "2" { Import-ZTIdentity }
         "3" { Backup-ZTIdentity }
         "4" { Show-ZTIdentity }
