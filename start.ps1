@@ -202,8 +202,9 @@ switch ($installChoice) {
                 # 检查是否成功生成身份
                 if (Test-Path $identityFile) {
                     Write-Host "身份文件已通过管理脚本成功生成" -ForegroundColor Green
-                    $nodeId = Get-Content -Path $identityPublicFile -Raw -ErrorAction SilentlyContinue
-                    if ($nodeId) {
+                    $publicKeyContent = Get-Content -Path $identityPublicFile -Raw -ErrorAction SilentlyContinue
+                    if ($publicKeyContent) {
+                        $nodeId = $publicKeyContent.Substring(0, 10)  # 取前10个字符作为节点ID
                         Write-Host "节点ID: $nodeId" -ForegroundColor Cyan
                     }
                 }

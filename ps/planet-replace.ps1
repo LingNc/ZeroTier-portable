@@ -1,7 +1,7 @@
 ﻿# ZeroTier便携版Planet文件替换工具
 # 此脚本用于替换ZeroTier的Planet文件，支持从网络下载或使用本地文件
 # 作者: GitHub Copilot
-# 版本: 1.1.1
+# 版本: 1.1.2
 # 日期: 2025-04-10
 
 # 参数定义
@@ -10,6 +10,8 @@ param (
     [switch]$h = $false
 )
 
+# 版本
+$version = "1.1.2"
 # 检查管理员权限并自动提升
 $currentPrincipal = New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())
 $isAdmin = $currentPrincipal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
@@ -46,7 +48,7 @@ function Show-Help {
     Write-Host @"
 ===================================================
       ZeroTier Planet文件替换工具 - 帮助信息
-      版本: 1.1.1
+      版本: $version
 ===================================================
 
 描述:
@@ -85,7 +87,7 @@ Clear-Host
 Write-Host @"
 ===================================================
       ZeroTier 便携版 Planet 文件替换工具
-      版本: 1.1.1
+      版本: $version
       日期: 2025-04-10
 ===================================================
 "@ -ForegroundColor Cyan
@@ -119,7 +121,7 @@ function Show-Menu {
     Write-Host @"
 ===================================================
       ZeroTier 便携版 Planet 文件替换工具
-      版本: 1.1.1
+      版本: $version
       日期: 2025-04-10
 ===================================================
 "@ -ForegroundColor Cyan
@@ -193,12 +195,91 @@ function Restore-DefaultPlanet {
 
 # 从网络下载Planet文件
 function Download-PlanetFile {
-    $downloadUrl = Read-Host "请输入Planet文件的下载URL"
+    # 清屏并显示标题
+    Clear-Host
+    Write-Host @"
+===================================================
+      从网络下载Planet文件
+      版本: 1.1.2
+===================================================
+"@ -ForegroundColor Cyan
+
+    Write-Host "`n提示: 输入'q'或按'Esc'键可随时返回主菜单" -ForegroundColor Yellow
+
+    # 提示用户提供下载URL
+    Write-Host "`n请输入Planet文件的下载URL" -ForegroundColor Green
+    Write-Host "(输入'q'并按Enter返回主菜单，或按'Esc'键立即返回)" -ForegroundColor Yellow
+
+    # 读取用户输入的函数，同时支持q和Esc键退出
+    function Read-InputWithEsc {
+        $inputChars = @()
+        $escPressed = $false
+
+        Write-Host -NoNewline "> " # 添加提示符
+
+        while ($true) {
+            # 使用ReadKey读取一个字符
+            $key = $host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
+
+            # 如果是Esc键，设置标志并退出循环
+            if ($key.VirtualKeyCode -eq 27) { # 27是Esc键的虚拟键码
+                $escPressed = $true
+                break
+            }
+
+            # 如果是回车键，退出循环
+            if ($key.VirtualKeyCode -eq 13) { # 13是回车键的虚拟键码
+                Write-Host "" # 换行
+                break
+            }
+
+            # 如果是退格键
+            if ($key.VirtualKeyCode -eq 8) { # 8是退格键的虚拟键码
+                if ($inputChars.Count -gt 0) {
+                    # 删除最后一个字符
+                    $inputChars = $inputChars[0..($inputChars.Count-2)]
+
+                    # 在控制台上模拟退格效果
+                    Write-Host -NoNewline "`b `b"
+                }
+                continue
+            }
+
+            # 将字符添加到数组并显示
+            if ($key.Character -ne 0) { # 确保是有效字符
+                $inputChars += $key.Character
+                Write-Host -NoNewline $key.Character
+            }
+        }
+
+        # 如果按了Esc键，返回特殊标记
+        if ($escPressed) {
+            return "ESC"
+        }
+
+        # 将字符数组连接成字符串返回
+        if ($inputChars.Count -eq 0) {
+            return ""
+        }
+        else {
+            return [string]::Join("", $inputChars)
+        }
+    }
+
+    # 使用新函数读取用户输入
+    $downloadUrl = Read-InputWithEsc
+
+    # 检查是否按了ESC键或输入了q
+    if ($downloadUrl -eq "ESC" -or $downloadUrl -eq "q" -or $downloadUrl -eq "Q") {
+        Write-Host "`n操作已取消，返回主菜单..." -ForegroundColor Yellow
+        return
+    }
 
     # 简单验证URL格式
     if (-not ($downloadUrl -match "^https?://")) {
         Write-Host "错误: URL必须以http://或https://开头" -ForegroundColor Red
-        Read-Host "按Enter返回主菜单"
+        Write-Host "按任意键返回主菜单..." -ForegroundColor Yellow
+        $null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
         return
     }
 
@@ -214,7 +295,8 @@ function Download-PlanetFile {
     catch {
         Write-Host "下载文件失败: $_" -ForegroundColor Red
         if (Test-Path $tempFile) { Remove-Item -Path $tempFile -Force }
-        Read-Host "按Enter返回主菜单"
+        Write-Host "按任意键返回主菜单..." -ForegroundColor Yellow
+        $null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
         return
     }
 
@@ -222,7 +304,8 @@ function Download-PlanetFile {
     if ((Get-Item $tempFile).Length -eq 0) {
         Write-Host "错误: 下载的文件为空!" -ForegroundColor Red
         Remove-Item -Path $tempFile -Force
-        Read-Host "按Enter返回主菜单"
+        Write-Host "按任意键返回主菜单..." -ForegroundColor Yellow
+        $null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
         return
     }
 
@@ -262,7 +345,8 @@ function Download-PlanetFile {
     }
     catch {
         Write-Host "替换Planet文件失败: $_" -ForegroundColor Red
-        Read-Host "按Enter返回主菜单"
+        Write-Host "按任意键返回主菜单..." -ForegroundColor Yellow
+        $null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
         return
     }
     finally {
@@ -281,17 +365,86 @@ Planet文件已成功替换!
 
 # 使用本地文件替换Planet
 function Use-LocalPlanetFile {
-    $localFile = Read-Host "请输入本地Planet文件的完整路径"
+    # 提示用户提供本地文件路径
+    Write-Host "(输入'q'并按Enter返回主菜单，或按'Esc'键立即返回)" -ForegroundColor Yellow
+    Write-Host "`n请输入本地Planet文件的完整路径" -ForegroundColor Green
+
+    # 读取用户输入的函数，同时支持q和Esc键退出
+    function Read-InputWithEsc {
+        $inputChars = @()
+        $escPressed = $false
+
+        Write-Host -NoNewline "> " # 添加提示符
+
+        while ($true) {
+            # 使用ReadKey读取一个字符
+            $key = $host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
+
+            # 如果是Esc键，设置标志并退出循环
+            if ($key.VirtualKeyCode -eq 27) { # 27是Esc键的虚拟键码
+                $escPressed = $true
+                break
+            }
+
+            # 如果是回车键，退出循环
+            if ($key.VirtualKeyCode -eq 13) { # 13是回车键的虚拟键码
+                Write-Host "" # 换行
+                break
+            }
+
+            # 如果是退格键
+            if ($key.VirtualKeyCode -eq 8) { # 8是退格键的虚拟键码
+                if ($inputChars.Count -gt 0) {
+                    # 删除最后一个字符
+                    $inputChars = $inputChars[0..($inputChars.Count-2)]
+
+                    # 在控制台上模拟退格效果
+                    Write-Host -NoNewline "`b `b"
+                }
+                continue
+            }
+
+            # 将字符添加到数组并显示
+            if ($key.Character -ne 0) { # 确保是有效字符
+                $inputChars += $key.Character
+                Write-Host -NoNewline $key.Character
+            }
+        }
+
+        # 如果按了Esc键，返回特殊标记
+        if ($escPressed) {
+            return "ESC"
+        }
+
+        # 将字符数组连接成字符串返回
+        if ($inputChars.Count -eq 0) {
+            return ""
+        }
+        else {
+            return [string]::Join("", $inputChars)
+        }
+    }
+
+    # 使用新函数读取用户输入
+    $localFile = Read-InputWithEsc
+
+    # 检查是否按了ESC键或输入了q
+    if ($localFile -eq "ESC" -or $localFile -eq "q" -or $localFile -eq "Q") {
+        Write-Host "`n操作已取消，返回主菜单..." -ForegroundColor Yellow
+        return
+    }
 
     if (-not (Test-Path $localFile)) {
         Write-Host "错误: 文件不存在: $localFile" -ForegroundColor Red
-        Read-Host "按Enter返回主菜单"
+        Write-Host "按任意键返回主菜单..." -ForegroundColor Yellow
+        $null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
         return
     }
 
     if ((Get-Item $localFile).Length -eq 0) {
         Write-Host "错误: 文件为空: $localFile" -ForegroundColor Red
-        Read-Host "按Enter返回主菜单"
+        Write-Host "按任意键返回主菜单..." -ForegroundColor Yellow
+        $null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
         return
     }
 

@@ -1,7 +1,7 @@
 ﻿# ZeroTier便携版身份管理脚本
 # 此脚本用于生成、备份和导入ZeroTier身份
 # 作者: GitHub Copilot
-# 版本: 1.1.4
+# 版本: 1.1.5
 # 日期: 2025-04-10
 
 # 参数定义
@@ -10,7 +10,7 @@ param (
     [switch]$h = $false
 )
 # 版本
-$version = "1.1.4"
+$version = "1.1.5"
 # 检查是否显示帮助
 if ($help -or $h) {
     Write-Host @"
@@ -167,8 +167,27 @@ function New-ZTIdentity {
 
         # 显示身份信息
         if (Test-Path $identityPublicFile) {
-            $nodeId = Get-Content -Path $identityPublicFile -Raw
+            $publicKeyContent = Get-Content -Path $identityPublicFile -Raw
+            $nodeId = $publicKeyContent.Substring(0, 10)  # 取前10个字符作为节点ID
+            Write-Host "公钥文件: $identityPublicFile" -ForegroundColor Yellow
             Write-Host "节点ID: $nodeId" -ForegroundColor Cyan
+        }
+        else {
+            # 如果公钥文件不存在，则生成公钥文件
+            Write-Host "正在从私钥生成公钥..." -ForegroundColor Yellow
+            $generatePublicCmd = "$zerotierExe -i getpublic `"$identityFile`" > `"$identityPublicFile`""
+            Invoke-Expression $generatePublicCmd
+
+            # 检查生成是否成功
+            if (Test-Path $identityPublicFile) {
+                $publicKeyContent = Get-Content -Path $identityPublicFile -Raw
+                $nodeId = $publicKeyContent.Substring(0, 10)  # 取前10个字符作为节点ID
+                Write-Host "公钥文件已生成" -ForegroundColor Green
+                Write-Host "节点ID: $nodeId" -ForegroundColor Cyan
+            }
+            else {
+                Write-Host "警告: 无法生成公钥文件" -ForegroundColor Red
+            }
         }
     }
     catch {
@@ -294,7 +313,8 @@ function Import-ZTIdentity {
         Invoke-Expression $generatePublicCmd
 
         if (Test-Path $identityPublicFile) {
-            $nodeId = Get-Content -Path $identityPublicFile -Raw
+            $publicKeyContent = Get-Content -Path $identityPublicFile -Raw
+            $nodeId = $publicKeyContent.Substring(0, 10)  # 取前10个字符作为节点ID
             Write-Host "节点ID: $nodeId" -ForegroundColor Cyan
         }
         else {
@@ -386,7 +406,8 @@ function Show-ZTIdentity {
     Write-Host "私钥文件: $identityFile" -ForegroundColor Yellow
 
     if (Test-Path $identityPublicFile) {
-        $nodeId = Get-Content -Path $identityPublicFile -Raw
+        $publicKeyContent = Get-Content -Path $identityPublicFile -Raw
+        $nodeId = $publicKeyContent.Substring(0, 10)  # 取前10个字符作为节点ID
         Write-Host "公钥文件: $identityPublicFile" -ForegroundColor Yellow
         Write-Host "节点ID: $nodeId" -ForegroundColor Green
 
@@ -401,7 +422,8 @@ function Show-ZTIdentity {
             Invoke-Expression $generatePublicCmd
 
             if (Test-Path $identityPublicFile) {
-                $nodeId = Get-Content -Path $identityPublicFile -Raw
+                $publicKeyContent = Get-Content -Path $identityPublicFile -Raw
+                $nodeId = $publicKeyContent.Substring(0, 10)  # 取前10个字符作为节点ID
                 Write-Host "公钥文件: $identityPublicFile" -ForegroundColor Yellow
                 Write-Host "节点ID: $nodeId" -ForegroundColor Green
             }
