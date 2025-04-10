@@ -1,7 +1,7 @@
 ﻿# ZeroTier便携版身份管理脚本
 # 此脚本用于生成、备份和导入ZeroTier身份
 # 作者: GitHub Copilot
-# 版本: 1.1.2
+# 版本: 1.1.4
 # 日期: 2025-04-10
 
 # 参数定义
@@ -9,45 +9,14 @@ param (
     [switch]$help = $false,
     [switch]$h = $false
 )
-
-# 需要管理员权限
-# 检查管理员权限并自动提升
-$currentPrincipal = New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())
-$isAdmin = $currentPrincipal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
-
-# 如果没有管理员权限，则使用提升的方式重新启动
-if (-not $isAdmin) {
-    Write-Host "需要管理员权限运行此脚本，正在请求权限..." -ForegroundColor Yellow
-
-    # 创建一个启动对象
-    $psi = New-Object System.Diagnostics.ProcessStartInfo "PowerShell"
-    $psi.Arguments = "-NoProfile -ExecutionPolicy Bypass -File `"$PSCommandPath`""
-    if ($args.Count -gt 0) { $psi.Arguments += " " + ($args -join " ") }
-    $psi.Verb = "runas"  # 请求提升权限
-    $psi.WorkingDirectory = Get-Location
-    $psi.WindowStyle = 'Normal'  # 使用正常窗口
-
-    # 启动进程
-    try {
-        $p = [System.Diagnostics.Process]::Start($psi)
-        # 等待进程完成
-        $p.WaitForExit()
-        exit $p.ExitCode  # 使用子进程的退出代码
-    }
-    catch {
-        Write-Host "获取管理员权限失败: $_" -ForegroundColor Red
-        Read-Host "按Enter退出"
-        exit 1
-    }
-    exit
-}
-
-# 显示帮助信息
-function Show-Help {
+# 版本
+$version = "1.1.4"
+# 检查是否显示帮助
+if ($help -or $h) {
     Write-Host @"
 ===================================================
       ZeroTier 便携版身份管理工具 - 帮助信息
-      版本: 1.1.2
+      版本: $version
 ===================================================
 
 描述:
@@ -75,20 +44,40 @@ function Show-Help {
     exit 0
 }
 
-# 检查是否显示帮助
-if ($help -or $h) {
-    Show-Help
+# 需要管理员权限
+# 检查管理员权限并自动提升
+$currentPrincipal = New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())
+$isAdmin = $currentPrincipal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+
+# 如果没有管理员权限，则使用提升的方式重新启动
+if (-not $isAdmin) {
+    try {
+        # 创建提升进程而不打开新窗口
+        $arguments = "-ExecutionPolicy Bypass -File `"$PSCommandPath`""
+        if ($args.Count -gt 0) {
+            $arguments += " " + ($args -join " ")
+        }
+
+        Write-Host "需要管理员权限运行此脚本，正在请求权限..." -ForegroundColor Yellow
+        Start-Process powershell -Verb RunAs -ArgumentList $arguments -WindowStyle Hidden -Wait
+        exit 0  # 原始进程退出
+    }
+    catch {
+        Write-Host "获取管理员权限失败: $_" -ForegroundColor Red
+        Read-Host "按Enter退出"
+        exit 1
+    }
 }
 
 # 显示标题
-Clear-Host
-Write-Host @"
-===================================================
-      ZeroTier 便携版身份管理工具
-      版本: 1.1.2
-      日期: 2025-04-10
-===================================================
-"@ -ForegroundColor Cyan
+# Clear-Host
+# Write-Host @"
+# ===================================================
+#       ZeroTier 便携版身份管理工具
+#       版本: 1.1.2
+#       日期: 2025-04-10
+# ===================================================
+# "@ -ForegroundColor Cyan
 
 # 获取脚本所在目录
 $scriptPath = Split-Path -Parent $MyInvocation.MyCommand.Path
@@ -124,7 +113,7 @@ function Show-Menu {
     Write-Host @"
 ===================================================
       ZeroTier 便携版身份管理工具
-      版本: 1.1.2
+      版本: $version
       日期: 2025-04-10
 ===================================================
 "@ -ForegroundColor Cyan
@@ -197,6 +186,11 @@ function Import-ZTIdentity {
         Write-Host "警告: 已存在身份文件 $identityFile" -ForegroundColor Yellow
         $confirm = Read-Host "是否覆盖现有身份? (Y/N)"
 
+        if ($confirm -eq "q" -or $confirm -eq "Q") {
+            Write-Host "操作已取消，返回主菜单..." -ForegroundColor Yellow
+            return
+        }
+
         if ($confirm -ne "Y" -and $confirm -ne "y") {
             Write-Host "操作已取消" -ForegroundColor Red
             return
@@ -213,11 +207,79 @@ function Import-ZTIdentity {
         Write-Host "已备份现有身份到: $backupFile" -ForegroundColor Green
     }
 
-    # 提示用户提供导入文件路径
-    $importPath = Read-Host "请输入要导入的身份文件(.secret)的完整路径"
+    # 提示用户提供导入文件路径，添加q选项和Esc键支持
+    Write-Host "`n请输入要导入的身份文件(.secret)的完整路径" -ForegroundColor Green
+    Write-Host "(输入'q'并按Enter返回主菜单，或按'Esc'键立即返回)" -ForegroundColor Yellow
+
+    # 读取用户输入的函数，同时支持q和Esc键退出
+    function Read-InputWithEsc {
+        $inputChars = @()
+        $escPressed = $false
+
+        Write-Host -NoNewline "> " # 添加提示符
+
+        while ($true) {
+            # 使用ReadKey读取一个字符
+            $key = $host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
+
+            # 如果是Esc键，设置标志并退出循环
+            if ($key.VirtualKeyCode -eq 27) { # 27是Esc键的虚拟键码
+                $escPressed = $true
+                break
+            }
+
+            # 如果是回车键，退出循环
+            if ($key.VirtualKeyCode -eq 13) { # 13是回车键的虚拟键码
+                Write-Host "" # 换行
+                break
+            }
+
+            # 如果是退格键
+            if ($key.VirtualKeyCode -eq 8) { # 8是退格键的虚拟键码
+                if ($inputChars.Count -gt 0) {
+                    # 删除最后一个字符
+                    $inputChars = $inputChars[0..($inputChars.Count-2)]
+
+                    # 在控制台上模拟退格效果
+                    Write-Host -NoNewline "`b `b"
+                }
+                continue
+            }
+
+            # 将字符添加到数组并显示
+            if ($key.Character -ne 0) { # 确保是有效字符
+                $inputChars += $key.Character
+                Write-Host -NoNewline $key.Character
+            }
+        }
+
+        # 如果按了Esc键，返回特殊标记
+        if ($escPressed) {
+            return "ESC"
+        }
+
+        # 将字符数组连接成字符串返回
+        if ($inputChars.Count -eq 0) {
+            return ""
+        }
+        else {
+            return [string]::Join("", $inputChars)
+        }
+    }
+
+    # 使用新函数读取用户输入
+    $importPath = Read-InputWithEsc
+
+    # 检查是否按了ESC键或输入了q
+    if ($importPath -eq "ESC" -or $importPath -eq "q" -or $importPath -eq "Q") {
+        Write-Host "`n操作已取消，返回主菜单..." -ForegroundColor Yellow
+        return
+    }
 
     if (-not (Test-Path $importPath)) {
         Write-Host "错误: 文件不存在: $importPath" -ForegroundColor Red
+        Write-Host "按任意键返回主菜单..." -ForegroundColor Yellow
+        $null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
         return
     }
 
@@ -378,7 +440,10 @@ do {
             Write-Host "===== 查看当前身份 =====" -ForegroundColor Cyan
             Show-ZTIdentity
         }
-        "5" { Write-Host "退出程序" -ForegroundColor Yellow; exit }
+        "5" {
+            Write-Host "退出程序" -ForegroundColor Yellow
+            exit 0  # 明确使用退出代码0，确保干净退出
+        }
         default {
             Write-Host "无效选择，将在3秒后返回主菜单..." -ForegroundColor Red
             Start-Sleep -Seconds 3

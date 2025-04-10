@@ -1,8 +1,7 @@
-﻿chcp 65001 # 将编码更改为 UTF-8
-# ZeroTier便携版启动脚本
+﻿# ZeroTier便携版启动脚本
 # 此脚本用于启动便携版ZeroTier
 # 作者: GitHub Copilot
-# 版本: 1.1.2
+# 版本: 1.1.3
 # 日期: 2025-04-10
 
 # 参数定义 - 必须在脚本开头定义
@@ -44,7 +43,7 @@ if (-not $isAdmin) {
 }
 
 # 版本
-$version="1.1.2"
+$version="1.1.3"
 
 # 显示帮助信息
 function Show-Help {
@@ -138,54 +137,128 @@ $identityFile = Join-Path -Path $dataPath -ChildPath "identity.secret"
 $identityPublicFile = Join-Path -Path $dataPath -ChildPath "identity.public"
 $isNewIdentity = $false
 
-if (-not (Test-Path $identityFile)) {
-    $isNewIdentity = $true
-    Write-Host "未找到身份文件，需要生成新的身份..." -ForegroundColor Yellow
+# 添加候选界面，让用户选择后续操作
+Clear-Host
+Write-Host @"
+===================================================
+      ZeroTier 便携版安装管理
+      版本: $version
+      日期: 2025-04-10
+===================================================
 
-    # 检查create-identity.ps1是否存在
-    if (-not (Test-Path $createIdentityPs1)) {
-        Write-Host "错误：无法找到身份生成脚本: $createIdentityPs1" -ForegroundColor Red
-        Write-Host "正在尝试使用内置方法生成身份..." -ForegroundColor Yellow
+"@ -ForegroundColor Cyan
 
-        # 使用内置方法生成身份
-        $createIdCmd = "$zerotierExe -i generate `"$identityFile`""
-        try {
-            Invoke-Expression $createIdCmd | Out-Null
-            Write-Host "身份文件已生成: $identityFile" -ForegroundColor Green
+Write-Host "请选择操作:" -ForegroundColor Yellow
+Write-Host "1. 安装 ZeroTier" -ForegroundColor Green
+Write-Host "2. 卸载 ZeroTier" -ForegroundColor Yellow
+Write-Host "3. 退出" -ForegroundColor Red
 
-            # 显示身份信息
-            if (Test-Path $identityPublicFile) {
-                $nodeId = Get-Content -Path $identityPublicFile -Raw
-                Write-Host "节点ID: $nodeId" -ForegroundColor Cyan
+$installChoice = Read-Host "`n请输入选择 (1-3) [默认:3]"
+
+# 如果用户没有输入，默认选择安装
+if ([string]::IsNullOrEmpty($installChoice)) {
+    $installChoice = "3"
+}
+
+# 根据用户选择执行相应操作
+switch ($installChoice) {
+    "1" {
+        Write-Host "`n准备安装 ZeroTier..." -ForegroundColor Green
+        # 继续执行安装过程，检查身份文件
+        if (-not (Test-Path $identityFile)) {
+            $isNewIdentity = $true
+            Write-Host "未找到身份文件，需要生成新的身份..." -ForegroundColor Yellow
+            Write-Host "按任意键进入身份编辑界面..." -ForegroundColor Cyan
+            $null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
+
+            # 检查create-identity.ps1是否存在
+            if (-not (Test-Path $createIdentityPs1)) {
+                Write-Host "错误：无法找到身份生成脚本: $createIdentityPs1" -ForegroundColor Red
+                Write-Host "正在尝试使用内置方法生成身份..." -ForegroundColor Yellow
+
+                # 使用内置方法生成身份
+                $createIdCmd = "$zerotierExe -i generate `"$identityFile`""
+                try {
+                    Invoke-Expression $createIdCmd | Out-Null
+                    Write-Host "身份文件已生成: $identityFile" -ForegroundColor Green
+
+                    # 显示身份信息
+                    if (Test-Path $identityPublicFile) {
+                        $nodeId = Get-Content -Path $identityPublicFile -Raw
+                        Write-Host "节点ID: $nodeId" -ForegroundColor Cyan
+                    }
+                }
+                catch {
+                    Write-Host "生成身份文件失败: $_" -ForegroundColor Red
+                    Read-Host "按Enter退出"
+                    exit 1
+                }
+            }
+            else {
+                # 使用create-identity.ps1脚本生成身份
+                Write-Host "启动身份管理脚本，请按提示操作..." -ForegroundColor Yellow
+                Start-Process powershell.exe -ArgumentList "-ExecutionPolicy Bypass -File `"$createIdentityPs1`" -auto" -Wait -NoNewWindow
+
+                # 检查是否成功生成身份
+                if (Test-Path $identityFile) {
+                    Write-Host "身份文件已通过管理脚本成功生成" -ForegroundColor Green
+                    $nodeId = Get-Content -Path $identityPublicFile -Raw -ErrorAction SilentlyContinue
+                    if ($nodeId) {
+                        Write-Host "节点ID: $nodeId" -ForegroundColor Cyan
+                    }
+                }
+                else {
+                    Write-Host "警告：未检测到身份文件生成，请手动确认是否已创建身份" -ForegroundColor Red
+                    $continue = Read-Host "是否继续安装过程? (Y/N)"
+                    if ($continue -ne "Y" -and $continue -ne "y") {
+                        Write-Host "操作已取消。" -ForegroundColor Red
+                        exit 1
+                    }
+                }
             }
         }
+    }
+    "2" {
+        Write-Host "`n准备卸载 ZeroTier..." -ForegroundColor Yellow
+
+        # 定义系统目标位置
+        $systemCmdPath = "C:\Windows\System32"
+        $cliSystemPath = "$systemCmdPath\zerotier-cli.bat"
+        $idtoolSystemPath = "$systemCmdPath\zerotier-idtool.bat"
+
+        # 删除符号链接
+        try {
+            if (Test-Path $cliSystemPath) {
+                Write-Host "正在删除系统中的zerotier-cli..." -ForegroundColor Yellow
+                Remove-Item -Force $cliSystemPath
+                Write-Host "已成功删除zerotier-cli" -ForegroundColor Green
+            }
+
+            if (Test-Path $idtoolSystemPath) {
+                Write-Host "正在删除系统中的zerotier-idtool..." -ForegroundColor Yellow
+                Remove-Item -Force $idtoolSystemPath
+                Write-Host "已成功删除zerotier-idtool" -ForegroundColor Green
+            }
+
+            Write-Host "`nZeroTier 符号链接已成功移除！" -ForegroundColor Green
+            Write-Host "卸载操作完成。" -ForegroundColor Green
+            Read-Host "按Enter退出"
+            exit 0
+        }
         catch {
-            Write-Host "生成身份文件失败: $_" -ForegroundColor Red
+            Write-Host "卸载ZeroTier符号链接失败: $_" -ForegroundColor Red
             Read-Host "按Enter退出"
             exit 1
         }
     }
-    else {
-        # 使用create-identity.ps1脚本生成身份
-        Write-Host "启动身份管理脚本，请按提示操作..." -ForegroundColor Yellow
-        Start-Process powershell.exe -ArgumentList "-ExecutionPolicy Bypass -File `"$createIdentityPs1`" -auto" -Wait -NoNewWindow
-
-        # 检查是否成功生成身份
-        if (Test-Path $identityFile) {
-            Write-Host "身份文件已通过管理脚本成功生成" -ForegroundColor Green
-            $nodeId = Get-Content -Path $identityPublicFile -Raw -ErrorAction SilentlyContinue
-            if ($nodeId) {
-                Write-Host "节点ID: $nodeId" -ForegroundColor Cyan
-            }
-        }
-        else {
-            Write-Host "警告：未检测到身份文件生成，请手动确认是否已创建身份" -ForegroundColor Red
-            $continue = Read-Host "是否继续启动过程? (Y/N)"
-            if ($continue -ne "Y" -and $continue -ne "y") {
-                Write-Host "操作已取消。" -ForegroundColor Red
-                exit 1
-            }
-        }
+    "3" {
+        Write-Host "`n操作已取消，正在退出..." -ForegroundColor Yellow
+        exit 0
+    }
+    default {
+        Write-Host "`n无效选择，默认执行安装操作..." -ForegroundColor Red
+        Start-Sleep -Seconds 2
+        # 继续执行安装流程
     }
 }
 
