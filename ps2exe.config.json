@@ -16,7 +16,7 @@
         "supportOS": true,
         "DPIAware": true
     },
-    "includes": [
+    "package": [
         "bin\\*",
         "bin\\tap-driver\\*",
         "ps\\*"
