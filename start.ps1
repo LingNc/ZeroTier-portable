@@ -345,6 +345,48 @@ if ($isNewIdentity) {
     }
 }
 
+# 复制或创建TAP驱动文件的符号链接到data目录
+Write-Host "`n正在确保TAP驱动文件在数据目录中可用..." -ForegroundColor Yellow
+$tapDriverSrcInf = Join-Path -Path $tapDriverPath -ChildPath "zttap300.inf"
+$tapDriverSrcSys = Join-Path -Path $tapDriverPath -ChildPath "zttap300.sys"
+$tapDriverSrcCat = Join-Path -Path $tapDriverPath -ChildPath "zttap300.cat"
+
+$tapDriverDstInf = Join-Path -Path $dataPath -ChildPath "zttap300.inf"
+$tapDriverDstSys = Join-Path -Path $dataPath -ChildPath "zttap300.sys"
+$tapDriverDstCat = Join-Path -Path $dataPath -ChildPath "zttap300.cat"
+
+# 检查源文件是否存在
+if (-not (Test-Path $tapDriverSrcInf) -or -not (Test-Path $tapDriverSrcSys) -or -not (Test-Path $tapDriverSrcCat)) {
+    Write-Host "警告：无法找到所需的TAP驱动文件，网络功能可能受限" -ForegroundColor Red
+    $continueAnyway = Read-Host "是否继续? (Y/N)"
+    if ($continueAnyway -ne "Y" -and $continueAnyway -ne "y") {
+        Write-Host "操作已取消。" -ForegroundColor Red
+        exit 1
+    }
+} else {
+    # 复制文件到数据目录
+    try {
+        if (Test-Path $tapDriverDstInf) { Remove-Item $tapDriverDstInf -Force }
+        if (Test-Path $tapDriverDstSys) { Remove-Item $tapDriverDstSys -Force }
+        if (Test-Path $tapDriverDstCat) { Remove-Item $tapDriverDstCat -Force }
+
+        Copy-Item -Path $tapDriverSrcInf -Destination $tapDriverDstInf -Force
+        Copy-Item -Path $tapDriverSrcSys -Destination $tapDriverDstSys -Force
+        Copy-Item -Path $tapDriverSrcCat -Destination $tapDriverDstCat -Force
+
+        Write-Host "TAP驱动文件已成功复制到数据目录" -ForegroundColor Green
+
+        # 更新驱动文件路径，后续使用数据目录中的文件
+        $tapDriverInf = $tapDriverDstInf
+        $tapDriverSys = $tapDriverDstSys
+        $tapDriverCat = $tapDriverDstCat
+    }
+    catch {
+        Write-Host "复制TAP驱动文件失败: $_" -ForegroundColor Red
+        Write-Host "尝试继续使用原始位置的驱动文件..." -ForegroundColor Yellow
+    }
+}
+
 # 检查TAP驱动是否已安装
 Write-Host "正在检查TAP驱动安装状态..." -ForegroundColor Yellow
 $tapDriverInf = Join-Path -Path $tapDriverPath -ChildPath "zttap300.inf"

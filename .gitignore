@@ -3,7 +3,7 @@
 !.gitignore
 !*.md
 !**/*.ps1
-!**/*.exe
+!bin/*.exe
 !**/*.bat
 !bin/tap-driver/*
 !*.json
