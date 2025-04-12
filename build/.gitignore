@@ -1,0 +1,6 @@
+*
+!*.ps1
+!*.exe
+!*.md
+!*.json
+!.gitignore

@@ -62,11 +62,11 @@ if (-not (Test-Path $mainScript -PathType Leaf)) {
 if ($config.PSObject.Properties['package'] -or $config.PSObject.Properties['includes']) {
     $packageItems = if ($config.PSObject.Properties['package']) { $config.package } else { $config.includes }
     $allDirsExist = $true
-    
+
     foreach ($pattern in $packageItems) {
         $pattern = $pattern.Replace("\\", "\")
         $dirPath = Split-Path -Parent $pattern
-        
+
         if (-not [string]::IsNullOrEmpty($dirPath)) {
             $fullDirPath = Join-Path $rootPath $dirPath
             if (-not (Test-Path $fullDirPath -PathType Container)) {
@@ -75,7 +75,7 @@ if ($config.PSObject.Properties['package'] -or $config.PSObject.Properties['incl
             }
         }
     }
-    
+
     if ($allDirsExist) {
         Write-Host "✅ 检查完成，所有必要文件和目录已找到" -ForegroundColor Green
     } else {
@@ -101,10 +101,10 @@ $ignoredFiles = @()
 $useCompression = $false
 
 # 检查是否存在嵌入方法配置
-if ($config.PSObject.Properties['buildOptions'] -and 
+if ($config.PSObject.Properties['buildOptions'] -and
     $config.buildOptions.PSObject.Properties['embedMethods']) {
     $embedMethodsConfig = $true
-    
+
     # 获取各类文件配置
     if ($config.buildOptions.embedMethods.PSObject.Properties['compressed']) {
         $compressedFiles = $config.buildOptions.embedMethods.compressed
@@ -115,14 +115,14 @@ if ($config.PSObject.Properties['buildOptions'] -and
     if ($config.buildOptions.embedMethods.PSObject.Properties['ignore']) {
         $ignoredFiles = $config.buildOptions.embedMethods.ignore
     }
-    
+
     # 检查是否启用压缩功能
     if ($config.buildOptions.PSObject.Properties['compressPackage']) {
         $useCompression = $config.buildOptions.compressPackage
         $compressStatusText = if ($useCompression) { "启用" } else { "禁用" }
         Write-Host "使用配置文件中的压缩选项: $compressStatusText" -ForegroundColor Yellow
     }
-    
+
     Write-Host "`n检测到自定义嵌入配置:" -ForegroundColor Cyan
     Write-Host "- 压缩嵌入文件: $($compressedFiles.Count) 个模式" -ForegroundColor Yellow
     Write-Host "- 直接嵌入文件: $($directEmbedFiles.Count) 个模式" -ForegroundColor Yellow
@@ -133,7 +133,7 @@ if ($config.PSObject.Properties['package'] -or $config.PSObject.Properties['incl
     $packageItems = if ($config.PSObject.Properties['package']) { $config.package } else { $config.includes }
     if ($packageItems -and $packageItems.Count -gt 0) {
         $needEmbedCode = $true
-        
+
         if ($embedMethodsConfig) {
             Write-Host "`n将使用自定义的嵌入方式处理文件" -ForegroundColor Cyan
         } else {
@@ -174,7 +174,7 @@ if ($useCompression) {
         $pattern = $pattern.Replace("\\", "\")
         $dirPath = Split-Path -Parent $pattern
         $filePattern = Split-Path -Leaf $pattern
-        
+
         # 提取目录名称
         if ([string]::IsNullOrEmpty($dirPath)) {
             # 如果是根目录下的通配符
@@ -187,11 +187,11 @@ if ($useCompression) {
             # 使用目录路径的第一段作为标识
             $dirToPackage = $dirPath.Split('\')[0]
         }
-        
+
         # 如果尚未处理过此目录
         if (-not $packagers.ContainsKey($dirToPackage)) {
             $packagers[$dirToPackage] = $pattern
-            
+
             # 检查打包脚本是否存在
             $packageScript = Join-Path $scriptPath "package-bin.ps1"
             if (-not (Test-Path $packageScript)) {
@@ -199,20 +199,20 @@ if ($useCompression) {
                 Write-Host "将使用直接嵌入方式替代" -ForegroundColor Yellow
                 continue
             }
-            
+
             # 执行目录打包
             Write-Host "`n正在打包 $dirToPackage 目录..." -ForegroundColor Cyan
-            
+
             # 构建输出名称
             $outputName = $dirToPackage
-            
+
             # 执行打包命令
             & $packageScript -SourceDirectory $dirToPackage -OutputName $outputName -Force
-            
+
             # 检查打包结果
             $outputPath = Join-Path -Path $scriptPath -ChildPath "$outputName-package"
             $extractCodeFile = Join-Path -Path $outputPath -ChildPath "extract-code.ps1"
-            
+
             if (Test-Path $extractCodeFile) {
                 $extractCode = Get-Content $extractCodeFile -Raw
                 $embeddedCode += @"
@@ -342,11 +342,11 @@ if ($needEmbedCode) {
         $pattern = $pattern.Replace("\\", "\")
         $dirPath = Split-Path -Parent $pattern
         $filePattern = Split-Path -Leaf $pattern
-        
+
         # 根据嵌入方式配置决定如何处理
         $embeddingMethod = "direct" # 默认直接嵌入
         $skipPattern = $false
-        
+
         if ($embedMethodsConfig) {
             # 检查是否应该跳过这个模式
             foreach ($ignorePattern in $ignoredFiles) {
@@ -356,9 +356,9 @@ if ($needEmbedCode) {
                     break
                 }
             }
-            
+
             if ($skipPattern) { continue }
-            
+
             # 检查是否应该压缩这个模式
             foreach ($compressPattern in $compressedFiles) {
                 if ($pattern -like $compressPattern -or $pattern -eq $compressPattern) {
@@ -366,7 +366,7 @@ if ($needEmbedCode) {
                     break
                 }
             }
-            
+
             # 已经检查了忽略和压缩，如果不是压缩，则检查是否是直接嵌入
             if ($embeddingMethod -ne "compressed") {
                 foreach ($directPattern in $directEmbedFiles) {
@@ -377,7 +377,7 @@ if ($needEmbedCode) {
                 }
             }
         }
-        
+
         # 如果是压缩嵌入且已经处理过该目录，则跳过
         if ($embeddingMethod -eq "compressed") {
             $dirToCheck = if ([string]::IsNullOrEmpty($dirPath)) {
@@ -385,7 +385,7 @@ if ($needEmbedCode) {
             } else {
                 $dirPath.Split('\')[0]
             }
-            
+
             if ($packagers.ContainsKey($dirToCheck)) {
                 Write-Host "  跳过模式: $pattern (由压缩包机制处理)" -ForegroundColor Gray
                 continue
@@ -393,7 +393,7 @@ if ($needEmbedCode) {
         }
 
         # ...existing code...
-        
+
         if (($embeddingMethod -eq "direct") -or (-not $embedMethodsConfig)) {
             # ...原来处理直接嵌入文件的代码...
             if ([string]::IsNullOrEmpty($dirPath)) {

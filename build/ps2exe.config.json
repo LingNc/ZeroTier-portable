@@ -20,10 +20,10 @@
         "compressPackage": true,
         "embedMethods": {
             "compressed": [
-                "bin\\*",
-                "ps\\*"
             ],
             "direct": [
+                "bin\\*",
+                "ps\\*"
             ],
             "ignore": []
         }
