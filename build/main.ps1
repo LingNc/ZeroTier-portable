@@ -1,14 +1,131 @@
 ﻿# ZeroTier便携版启动脚本
 # 此脚本用于启动便携版ZeroTier
 # 作者: LingNc
-# 版本: 1.2.0
-# 日期: 2025-04-10
+# 版本: 1.2.1
+# 日期: 2025-04-13
+
+# BEGIN EMBEDDED BIN PACKAGE
+# 此代码段包含嵌入的二进制文件包
+# 此处将在构建过程中自动插入由package-bin.ps1生成的代码
+# 包括Extract-BinaryPackage函数和压缩的二进制数据
+
+# 自定义解压方法，用于EXE模式下提取bin目录
+function Extract-BinDirectory {
+    param(
+        [string]$DestinationPath
+    )
+
+    # 检查是否已经存在Extract-BinaryPackage函数（由构建过程中嵌入）
+    if (Get-Command -Name Extract-BinaryPackage -ErrorAction SilentlyContinue) {
+        # 使用打包的解压函数
+        Write-Host "检测到嵌入的二进制包，正在解压..." -ForegroundColor Yellow
+        $result = Extract-BinaryPackage -DestinationPath $DestinationPath -Force
+        return $result
+    } else {
+        # 回退方案：如果没有嵌入的二进制包，尝试从EXE同目录复制bin目录
+        Write-Host "未检测到嵌入的二进制包，尝试从EXE目录复制..." -ForegroundColor Yellow
+        $srcBinPath = Join-Path -Path $baseDir -ChildPath "bin"
+
+        if (Test-Path $srcBinPath -PathType Container) {
+            # 创建目标目录（如不存在）
+            if (-not (Test-Path $DestinationPath -PathType Container)) {
+                New-Item -Path $DestinationPath -ItemType Directory -Force | Out-Null
+            }
+
+            # 复制文件
+            Copy-Item -Path "$srcBinPath\*" -Destination $DestinationPath -Recurse -Force
+
+            # 验证复制是否成功
+            $binFiles = Get-ChildItem -Path $DestinationPath -Recurse -File
+            if ($binFiles.Count -gt 0) {
+                Write-Host "✓ 成功从EXE目录复制 $($binFiles.Count) 个文件" -ForegroundColor Green
+                return $true
+            } else {
+                Write-Host "复制bin目录文件失败" -ForegroundColor Red
+                return $false
+            }
+        } else {
+            Write-Host "错误: 在EXE目录中未找到bin目录: $srcBinPath" -ForegroundColor Red
+            return $false
+        }
+    }
+}
+# END EMBEDDED BIN PACKAGE
+
+# 全局版本变量 - 便于统一管理版本号
+$script:ZT_VERSION="1.2.1"
 
 # 参数定义 - 必须在脚本开头定义
 param (
     [switch]$help = $false,
-    [switch]$h = $false
+    [switch]$h = $false,
+    [switch]$debug = $false,    # 调试模式开关
+    [switch]$logOnly = $false   # 仅记录日志但不显示详细输出
 )
+
+# 定义日志函数 - 记录日志到文件和控制台
+function Write-ZTLog {
+    param (
+        [Parameter(Mandatory = $true)]
+        [string]$Message,
+        [Parameter(Mandatory = $false)]
+        [ValidateSet('Info', 'Warning', 'Error', 'Debug')]
+        [string]$Level = 'Info',
+        [Parameter(Mandatory = $false)]
+        [ConsoleColor]$ForegroundColor
+    )
+
+    # 生成日志条目
+    $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+    $logEntry = "[$timestamp] [$Level] $Message"
+
+    # 如果日志目录已定义，写入日志文件
+    if ($script:logFile) {
+        Add-Content -Path $script:logFile -Value $logEntry -Encoding UTF8 -ErrorAction SilentlyContinue
+    }
+
+    # 确定控制台输出的颜色
+    if (-not $ForegroundColor) {
+        switch ($Level) {
+            'Info'    { $ForegroundColor = [ConsoleColor]::White }
+            'Warning' { $ForegroundColor = [ConsoleColor]::Yellow }
+            'Error'   { $ForegroundColor = [ConsoleColor]::Red }
+            'Debug'   { $ForegroundColor = [ConsoleColor]::Cyan }
+        }
+    }
+
+    # 根据调试模式决定是否输出到控制台
+    if ($Level -eq 'Debug' -and -not $debug) {
+        # 如果是Debug级别且未启用调试模式，则不输出到控制台
+        return
+    }
+
+    # 如果没有启用logOnly模式或是错误信息，则输出到控制台
+    if (-not $logOnly -or $Level -eq 'Error') {
+        Write-Host $logEntry -ForegroundColor $ForegroundColor
+    }
+}
+
+# 如果启用了调试模式，调整PowerShell偏好设置
+if ($debug) {
+    $VerbosePreference = "Continue"
+    $DebugPreference = "Continue"
+    $ErrorActionPreference = "Inquire"
+
+    # 调试模式暂停函数
+    function Debug-Pause {
+        param([string]$Message = "按任意键继续...")
+        Write-ZTLog "调试暂停: $Message" -Level Debug
+        Write-Host $Message -ForegroundColor Yellow
+        $null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
+    }
+
+    Write-ZTLog "调试模式已启用 - 日志级别: 详细" -Level Debug
+} else {
+    $VerbosePreference = "SilentlyContinue"
+    $DebugPreference = "SilentlyContinue"
+    $ErrorActionPreference = "Continue"
+}
 
 # 定义错误处理函数 - 捕获所有空路径错误
 function Test-PathSafely {
@@ -19,26 +136,27 @@ function Test-PathSafely {
     )
 
     if ([string]::IsNullOrEmpty($Path)) {
-        Write-Host "警告: 路径参数为空" -ForegroundColor Yellow
+        Write-ZTLog "警告: 路径参数为空" -Level Warning
         return $false
     }
 
     try {
         if (Test-Path -Path $Path -ErrorAction Stop) {
+            Write-ZTLog "路径检查通过: $Path" -Level Debug
             return $true
         }
         elseif ($CreateIfDirectory -and $Type -eq "目录") {
-            Write-Host "创建目录: $Path" -ForegroundColor Yellow
+            Write-ZTLog "创建目录: $Path" -Level Info
             New-Item -ItemType Directory -Path $Path -Force | Out-Null
             return $true
         }
         else {
-            Write-Host "警告: $Type 不存在 - $Path" -ForegroundColor Yellow
+            Write-ZTLog "警告: $Type 不存在 - $Path" -Level Warning
             return $false
         }
     }
     catch {
-        Write-Host "错误: 检查路径时发生异常: $Path - $_" -ForegroundColor Red
+        Write-ZTLog "错误: 检查路径时发生异常: $Path - $_" -Level Error
         return $false
     }
 }
@@ -48,7 +166,7 @@ $execMode = "未知"
 if ($null -ne $MyInvocation.MyCommand.Module) {
     # 从EXE运行时，使用临时目录作为运行时目录
     $execMode = "EXE模式"
-    $runtimePath = Join-Path $env:TEMP "ZeroTier-Portable-Temp"
+    $runtimePath = Join-Path $env:TEMP "ZeroTier-Portable-Temp-$(Get-Random)"
     # 获取EXE所在目录作为基础目录
     $baseDir = Split-Path -Parent ([System.Diagnostics.Process]::GetCurrentProcess().MainModule.FileName)
 } else {
@@ -59,9 +177,9 @@ if ($null -ne $MyInvocation.MyCommand.Module) {
 }
 
 # 输出运行模式和目录信息
-Write-Host "检测到运行模式: $execMode" -ForegroundColor Cyan
-Write-Host "基础目录: $baseDir" -ForegroundColor Cyan
-Write-Host "运行时目录: $runtimePath" -ForegroundColor Cyan
+Write-ZTLog "检测到运行模式: $execMode" -Level Info -ForegroundColor Cyan
+Write-ZTLog "基础目录: $baseDir" -Level Debug
+Write-ZTLog "运行时目录: $runtimePath" -Level Debug
 
 # 定义清理函数
 function Clean-Environment {
@@ -70,7 +188,7 @@ function Clean-Environment {
         [string]$tempPath = $runtimePath
     )
 
-    Write-Host "正在清理环境..." -ForegroundColor Yellow
+    Write-ZTLog "正在清理环境..." -Level Info -ForegroundColor Yellow
 
     # 1. 移除命令行工具符号链接或文件
     $cliLink = Join-Path $systemCmdPath "zerotier-cli.bat"
@@ -78,33 +196,41 @@ function Clean-Environment {
 
     if (Test-PathSafely -Path $cliLink) {
         Remove-Item $cliLink -Force -ErrorAction SilentlyContinue
-        Write-Host "已移除命令行工具 zerotier-cli" -ForegroundColor Green
+        Write-ZTLog "已移除命令行工具 zerotier-cli" -Level Info -ForegroundColor Green
     }
 
     if (Test-PathSafely -Path $idtoolLink) {
         Remove-Item $idtoolLink -Force -ErrorAction SilentlyContinue
-        Write-Host "已移除命令行工具 zerotier-idtool" -ForegroundColor Green
+        Write-ZTLog "已移除命令行工具 zerotier-idtool" -Level Info -ForegroundColor Green
     }
 
     # 2. 清理临时运行目录
     if ($tempPath -ne $PSScriptRoot -and (Test-PathSafely -Path $tempPath)) {
-        Remove-Item $tempPath -Recurse -Force -ErrorAction SilentlyContinue
-        Write-Host "已清理临时文件 $tempPath" -ForegroundColor Green
+        try {
+            Remove-Item $tempPath -Recurse -Force -ErrorAction Stop
+            Write-ZTLog "已清理临时文件 $tempPath" -Level Info -ForegroundColor Green
+        }
+        catch {
+            Write-ZTLog "警告: 清理临时目录失败: $_" -Level Warning
+            Write-ZTLog "一些临时文件可能保留在: $tempPath" -Level Warning
+        }
     }
 
-    Write-Host "环境清理完成" -ForegroundColor Green
+    Write-ZTLog "环境清理完成" -Level Info -ForegroundColor Green
 }
 
 # 注册退出事件处理器
 try {
     $exitEvent = {
         param($sender, $eventArgs)
+        Write-ZTLog "程序即将退出，正在执行清理..." -Level Info
         Clean-Environment -systemCmdPath "C:\Windows\System32" -tempPath $runtimePath
+        Write-ZTLog "程序退出完成" -Level Info
     }
     Register-EngineEvent -SourceIdentifier PowerShell.Exiting -Action $exitEvent -ErrorAction SilentlyContinue | Out-Null
 }
 catch {
-    Write-Host "注册退出事件处理失败: $_，程序退出时可能无法自动清理环境" -ForegroundColor Yellow
+    Write-ZTLog "注册退出事件处理失败: $_，程序退出时可能无法自动清理环境" -Level Warning
 }
 
 # 检查管理员权限并自动提升
@@ -116,28 +242,36 @@ $isAdmin = $currentPrincipal.IsInRole([Security.Principal.WindowsBuiltInRole]::A
 if (-not $isAdmin) {
     # 创建一个启动对象
     $psi = New-Object System.Diagnostics.ProcessStartInfo "PowerShell"
-    $psi.Arguments = "-NoProfile -ExecutionPolicy Bypass -File `"$PSCommandPath`""
-    if ($args.Count -gt 0) { $psi.Arguments += " " + ($args -join " ") }
+    $arguments = "-NoProfile -ExecutionPolicy Bypass -File `"$PSCommandPath`""
+
+    # 添加调试参数
+    if ($debug) { $arguments += " -debug" }
+    if ($logOnly) { $arguments += " -logOnly" }
+
+    # 添加其他参数
+    if ($args.Count -gt 0) { $arguments += " " + ($args -join " ") }
+
+    $psi.Arguments = $arguments
     $psi.Verb = "runas"  # 请求提升权限
     $psi.WorkingDirectory = Get-Location
     $psi.WindowStyle = 'Normal'  # 使用正常窗口
 
     # 启动进程
     try {
-        Write-Host "需要管理员权限运行此脚本，正在请求权限..." -ForegroundColor Yellow
+        Write-ZTLog "需要管理员权限运行此脚本，正在请求权限..." -Level Info -ForegroundColor Yellow
         $p = [System.Diagnostics.Process]::Start($psi)
         # 立即退出当前进程，避免显示两个窗口
         exit
     }
     catch {
-        Write-Host "获取管理员权限失败: $_" -ForegroundColor Red
+        Write-ZTLog "获取管理员权限失败: $_" -Level Error
         Read-Host "按Enter退出"
         exit 1
     }
 }
 
 # 版本
-$version="1.2.0"
+$version=$script:ZT_VERSION
 
 # 显示帮助信息
 function Show-Help {
@@ -152,10 +286,12 @@ function Show-Help {
     和ZeroTier服务启动过程。
 
 用法:
-    start.ps1 [-help|-h]
+    start.ps1 [-help|-h] [-debug] [-logOnly]
 
 参数:
     -help, -h    显示此帮助信息
+    -debug       启用调试模式，显示详细日志
+    -logOnly     仅记录日志到文件，减少控制台输出
 
 功能:
     1. 检查数据目录并创建必要的子目录
@@ -173,6 +309,9 @@ function Show-Help {
     zerotier-cli replace  - 启动Planet文件替换工具
     zerotier-idtool inter - 启动身份管理工具
 
+日志位置:
+    $($script:logFile)
+
 "@
     exit 0
 }
@@ -183,20 +322,20 @@ if ($help -or $h) {
 }
 
 # 显示管理员权限提示
-Write-Host "以管理员权限运行..." -ForegroundColor Green
+Write-ZTLog "以管理员权限运行..." -Level Info -ForegroundColor Green
 
 # 显示启动标志
-Write-Host @"
+Write-ZTLog @"
 ===================================================
          ZeroTier 便携版启动脚本
          版本: $version
-         日期: 2025-04-10
+         日期: 2025-04-13
 ===================================================
-"@ -ForegroundColor Cyan
+"@ -Level Info -ForegroundColor Cyan
 
 # 准备运行环境 - 如果从EXE运行，则解压文件到临时目录
 if ($runtimePath -ne $PSScriptRoot) {
-    Write-Host "准备运行环境..." -ForegroundColor Yellow
+    Write-ZTLog "准备运行环境..." -Level Info -ForegroundColor Yellow
 
     # 创建存储临时文件的目录路径变量
     $binDest = Join-Path $runtimePath "bin"
@@ -207,7 +346,7 @@ if ($runtimePath -ne $PSScriptRoot) {
     # 清理可能存在的旧临时目录
     if (Test-PathSafely -Path $runtimePath) {
         Remove-Item $runtimePath -Recurse -Force -ErrorAction SilentlyContinue
-        Write-Host "已清理旧的临时目录" -ForegroundColor Yellow
+        Write-ZTLog "已清理旧的临时目录" -Level Info -ForegroundColor Yellow
     }
 
     # 创建新的临时目录
@@ -215,47 +354,55 @@ if ($runtimePath -ne $PSScriptRoot) {
     New-Item -ItemType Directory -Path $binDest -Force -ErrorAction SilentlyContinue | Out-Null
     New-Item -ItemType Directory -Path $psDest -Force -ErrorAction SilentlyContinue | Out-Null
 
-    # 检查要复制的源文件夹是否存在
-    if (-not (Test-PathSafely -Path $binSrc -Type "目录")) {
-        # 如果源bin目录不存在，在exe模式下查找内嵌的资源
-        Write-Host "在EXE模式下查找内嵌bin资源..." -ForegroundColor Yellow
+    # 优先尝试使用嵌入的二进制包解压bin目录
+    $binExtracted = Extract-BinDirectory -DestinationPath $binDest
 
-        # 确保临时目录已创建
-        New-Item -ItemType Directory -Path $binDest -Force -ErrorAction SilentlyContinue | Out-Null
-        New-Item -ItemType Directory -Path (Join-Path $binDest "tap-driver") -Force -ErrorAction SilentlyContinue | Out-Null
-
-        # 写入内部脚本解释说明
-        Write-Host "如果您是从EXE运行，文件会自动从内嵌资源中解压出来" -ForegroundColor Green
-    }
-    else {
-        # 复制正常的文件夹内容
-        Write-Host "复制bin目录到临时路径..." -ForegroundColor Yellow
-        Copy-Item -Path "$binSrc\*" -Destination $binDest -Recurse -Force -ErrorAction SilentlyContinue
+    if (-not $binExtracted) {
+        Write-ZTLog "无法解压或复制bin目录，程序可能无法正常运行" -Level Error -ForegroundColor Red
+        $continueAnyway = Read-Host "是否继续尝试运行? (Y/N) [默认: N]"
+        if ($continueAnyway -ne "Y" -and $continueAnyway -ne "y") {
+            Write-ZTLog "操作已取消" -Level Error -ForegroundColor Red
+            exit 1
+        }
     }
 
+    # 处理ps脚本目录
     if (-not (Test-PathSafely -Path $psSrc -Type "目录")) {
         # 如果源ps目录不存在，在exe模式下创建空目录
-        Write-Host "在EXE模式下查找内嵌ps资源..." -ForegroundColor Yellow
+        Write-ZTLog "在EXE模式下查找内嵌ps资源..." -Level Info -ForegroundColor Yellow
         New-Item -ItemType Directory -Path $psDest -Force -ErrorAction SilentlyContinue | Out-Null
     }
     else {
         # 复制正常的文件夹内容
-        Write-Host "复制ps目录到临时路径..." -ForegroundColor Yellow
+        Write-ZTLog "复制ps目录到临时路径..." -Level Info -ForegroundColor Yellow
         Copy-Item -Path "$psSrc\*" -Destination $psDest -Recurse -Force -ErrorAction SilentlyContinue
     }
 
-    Write-Host "运行环境准备完成" -ForegroundColor Green
+    Write-ZTLog "运行环境准备完成" -Level Info -ForegroundColor Green
 }
 
 # 定义数据目录（在U盘上的隐藏文件夹）
 $dataPath = Join-Path -Path $baseDir -ChildPath "ZeroTierData"
 
+# 初始化日志文件
+# 初始化日志路径
+$script:logDir = Join-Path -Path $dataPath -ChildPath "logs"
+$script:logFile = Join-Path -Path $script:logDir -ChildPath "zerotier-portable-$(Get-Date -Format 'yyyyMMdd').log"
+
 # 如果数据目录不存在，创建并设置为隐藏
 if (-not (Test-PathSafely -Path $dataPath -Type "目录" -CreateIfDirectory)) {
     # 安全性检查 - 目录创建失败的情况
-    Write-Host "无法创建数据目录，尝试使用临时目录..." -ForegroundColor Yellow
+    Write-ZTLog "无法创建数据目录，尝试使用临时目录..." -Level Warning
     $dataPath = Join-Path -Path ([System.IO.Path]::GetTempPath()) -ChildPath "ZeroTierData_Temp"
     New-Item -ItemType Directory -Path $dataPath -Force -ErrorAction SilentlyContinue | Out-Null
+
+    # 更新日志目录
+    $script:logDir = Join-Path -Path $dataPath -ChildPath "logs"
+    if (-not (Test-Path -Path $script:logDir -PathType Container)) {
+        New-Item -Path $script:logDir -ItemType Directory -Force | Out-Null
+    }
+    $script:logFile = Join-Path -Path $script:logDir -ChildPath "zerotier-portable-$(Get-Date -Format 'yyyyMMdd').log"
+    Write-ZTLog "日志位置已更新: $($script:logFile)" -Level Info
 }
 else {
     # 尝试设置隐藏属性
@@ -263,18 +410,18 @@ else {
         $folder = Get-Item $dataPath -Force -ErrorAction SilentlyContinue
         if ($folder) {
             $folder.Attributes = $folder.Attributes -bor [System.IO.FileAttributes]::Hidden
-            Write-Host "已创建数据存储目录: $dataPath (隐藏)" -ForegroundColor Green
+            Write-ZTLog "已创建数据存储目录: $dataPath (隐藏)" -Level Info -ForegroundColor Green
         }
     }
     catch {
-        Write-Host "无法设置文件夹隐藏属性: $_" -ForegroundColor Yellow
+        Write-ZTLog "无法设置文件夹隐藏属性: $_" -Level Warning
     }
 }
 
 # 确保networks.d子目录存在
 $networksDir = Join-Path -Path $dataPath -ChildPath "networks.d"
 if (-not (Test-PathSafely -Path $networksDir -Type "目录" -CreateIfDirectory)) {
-    Write-Host "无法创建networks.d子目录" -ForegroundColor Yellow
+    Write-ZTLog "无法创建networks.d子目录" -Level Warning
 }
 
 # 更新路径变量以使用新的目录结构
@@ -297,35 +444,35 @@ $criticalComponents = @{
 $missingComponents = $false
 foreach ($component in $criticalComponents.GetEnumerator()) {
     if (-not (Test-PathSafely -Path $component.Value)) {
-        Write-Host "错误: 无法找到关键组件 $($component.Key): $($component.Value)" -ForegroundColor Red
+        Write-ZTLog "错误: 无法找到关键组件 $($component.Key): $($component.Value)" -Level Error -ForegroundColor Red
         $missingComponents = $true
     }
     else {
-        Write-Host "✅ 已找到组件: $($component.Key)" -ForegroundColor Green
+        Write-ZTLog "✅ 已找到组件: $($component.Key)" -Level Info -ForegroundColor Green
     }
 }
 
 # 如果关键组件缺失，提供详细诊断信息
 if ($missingComponents) {
-    Write-Host "`n诊断信息:" -ForegroundColor Yellow
-    Write-Host "运行模式: $execMode" -ForegroundColor Yellow
-    Write-Host "基础目录: $baseDir" -ForegroundColor Yellow
-    Write-Host "运行时目录: $runtimePath" -ForegroundColor Yellow
-    Write-Host "数据目录: $dataPath" -ForegroundColor Yellow
+    Write-ZTLog "`n诊断信息:" -Level Warning
+    Write-ZTLog "运行模式: $execMode" -Level Warning
+    Write-ZTLog "基础目录: $baseDir" -Level Warning
+    Write-ZTLog "运行时目录: $runtimePath" -Level Warning
+    Write-ZTLog "数据目录: $dataPath" -Level Warning
 
     if ($execMode -eq "EXE模式") {
-        Write-Host "`nEXE模式下可能的问题:" -ForegroundColor Yellow
-        Write-Host "1. 打包过程中未正确包含依赖文件" -ForegroundColor Yellow
-        Write-Host "2. 资源提取到临时目录失败" -ForegroundColor Yellow
-        Write-Host "3. 临时目录访问权限不足" -ForegroundColor Yellow
+        Write-ZTLog "`nEXE模式下可能的问题:" -Level Warning
+        Write-ZTLog "1. 打包过程中未正确包含依赖文件" -Level Warning
+        Write-ZTLog "2. 资源提取到临时目录失败" -Level Warning
+        Write-ZTLog "3. 临时目录访问权限不足" -Level Warning
 
-        Write-Host "`n请尝试以下解决方案:" -ForegroundColor Yellow
-        Write-Host "1. 使用管理员权限运行此EXE" -ForegroundColor Yellow
-        Write-Host "2. 检查杀毒软件是否阻止了文件解压" -ForegroundColor Yellow
-        Write-Host "3. 尝试重新打包程序，确保包含所有依赖文件" -ForegroundColor Yellow
+        Write-ZTLog "`n请尝试以下解决方案:" -Level Warning
+        Write-ZTLog "1. 使用管理员权限运行此EXE" -Level Warning
+        Write-ZTLog "2. 检查杀毒软件是否阻止了文件解压" -Level Warning
+        Write-ZTLog "3. 尝试重新打包程序，确保包含所有依赖文件" -Level Warning
     }
 
-    Write-Host "`n请确保文件结构完整，必要的文件都在正确的位置。" -ForegroundColor Red
+    Write-ZTLog "`n请确保文件结构完整，必要的文件都在正确的位置。" -Level Error -ForegroundColor Red
     Read-Host "按Enter退出"
     exit 1
 }
@@ -337,19 +484,19 @@ $isNewIdentity = $false
 
 # 添加候选界面，让用户选择后续操作
 Clear-Host
-Write-Host @"
+Write-ZTLog @"
 ===================================================
       ZeroTier 便携版安装管理
       版本: $version
       日期: 2025-04-10
 ===================================================
 
-"@ -ForegroundColor Cyan
+"@ -Level Info -ForegroundColor Cyan
 
-Write-Host "请选择操作:" -ForegroundColor Yellow
-Write-Host "1. 安装 ZeroTier" -ForegroundColor Green
-Write-Host "2. 卸载 ZeroTier" -ForegroundColor Yellow
-Write-Host "3. 退出" -ForegroundColor Red
+Write-ZTLog "请选择操作:" -Level Info -ForegroundColor Yellow
+Write-ZTLog "1. 安装 ZeroTier" -Level Info -ForegroundColor Green
+Write-ZTLog "2. 卸载 ZeroTier" -Level Info -ForegroundColor Yellow
+Write-ZTLog "3. 退出" -Level Info -ForegroundColor Red
 
 $installChoice = Read-Host "`n请输入选择 (1-3) [默认:1]"
 
@@ -361,56 +508,56 @@ if ([string]::IsNullOrEmpty($installChoice)) {
 # 根据用户选择执行相应操作
 switch ($installChoice) {
     "1" {
-        Write-Host "`n准备安装 ZeroTier..." -ForegroundColor Green
+        Write-ZTLog "`n准备安装 ZeroTier..." -Level Info -ForegroundColor Green
         # 继续执行安装过程，检查身份文件
         if (-not (Test-Path $identityFile)) {
             $isNewIdentity = $true
-            Write-Host "未找到身份文件，需要生成新的身份..." -ForegroundColor Yellow
-            Write-Host "按任意键进入身份编辑界面..." -ForegroundColor Cyan
+            Write-ZTLog "未找到身份文件，需要生成新的身份..." -Level Warning -ForegroundColor Yellow
+            Write-ZTLog "按任意键进入身份编辑界面..." -Level Info -ForegroundColor Cyan
             $null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
 
             # 检查create-identity.ps1是否存在
             if (-not (Test-Path $createIdentityPs1)) {
-                Write-Host "错误：无法找到身份生成脚本: $createIdentityPs1" -ForegroundColor Red
-                Write-Host "正在尝试使用内置方法生成身份..." -ForegroundColor Yellow
+                Write-ZTLog "错误：无法找到身份生成脚本: $createIdentityPs1" -Level Error -ForegroundColor Red
+                Write-ZTLog "正在尝试使用内置方法生成身份..." -Level Warning -ForegroundColor Yellow
 
                 # 使用内置方法生成身份
                 $createIdCmd = "$zerotierExe -i generate `"$identityFile`""
                 try {
                     Invoke-Expression $createIdCmd | Out-Null
-                    Write-Host "身份文件已生成: $identityFile" -ForegroundColor Green
+                    Write-ZTLog "身份文件已生成: $identityFile" -Level Info -ForegroundColor Green
 
                     # 显示身份信息
                     if (Test-Path $identityPublicFile) {
                         $nodeId = Get-Content -Path $identityPublicFile -Raw
-                        Write-Host "节点ID: $nodeId" -ForegroundColor Cyan
+                        Write-ZTLog "节点ID: $nodeId" -Level Info -ForegroundColor Cyan
                     }
                 }
                 catch {
-                    Write-Host "生成身份文件失败: $_" -ForegroundColor Red
+                    Write-ZTLog "生成身份文件失败: $_" -Level Error -ForegroundColor Red
                     Read-Host "按Enter退出"
                     exit 1
                 }
             }
             else {
                 # 使用create-identity.ps1脚本生成身份
-                Write-Host "启动身份管理脚本，请按提示操作..." -ForegroundColor Yellow
+                Write-ZTLog "启动身份管理脚本，请按提示操作..." -Level Warning -ForegroundColor Yellow
                 Start-Process powershell.exe -ArgumentList "-ExecutionPolicy Bypass -File `"$createIdentityPs1`" -auto" -Wait -NoNewWindow
 
                 # 检查是否成功生成身份
                 if (Test-Path $identityFile) {
-                    Write-Host "身份文件已通过管理脚本成功生成" -ForegroundColor Green
+                    Write-ZTLog "身份文件已通过管理脚本成功生成" -Level Info -ForegroundColor Green
                     $publicKeyContent = Get-Content -Path $identityPublicFile -Raw -ErrorAction SilentlyContinue
                     if ($publicKeyContent) {
                         $nodeId = $publicKeyContent.Substring(0, 10)  # 取前10个字符作为节点ID
-                        Write-Host "节点ID: $nodeId" -ForegroundColor Cyan
+                        Write-ZTLog "节点ID: $nodeId" -Level Info -ForegroundColor Cyan
                     }
                 }
                 else {
-                    Write-Host "警告：未检测到身份文件生成，请手动确认是否已创建身份" -ForegroundColor Red
+                    Write-ZTLog "警告：未检测到身份文件生成，请手动确认是否已创建身份" -Level Error -ForegroundColor Red
                     $continue = Read-Host "是否继续安装过程? (Y/N)"
                     if ($continue -ne "Y" -and $continue -ne "y") {
-                        Write-Host "操作已取消。" -ForegroundColor Red
+                        Write-ZTLog "操作已取消。" -Level Error -ForegroundColor Red
                         exit 1
                     }
                 }
@@ -418,7 +565,7 @@ switch ($installChoice) {
         }
     }
     "2" {
-        Write-Host "`n准备卸载 ZeroTier..." -ForegroundColor Yellow
+        Write-ZTLog "`n准备卸载 ZeroTier..." -Level Warning -ForegroundColor Yellow
 
         # 定义系统目标位置
         $systemCmdPath = "C:\Windows\System32"
@@ -432,42 +579,42 @@ switch ($installChoice) {
         # 删除符号链接
         try {
             if (Test-Path $cliSystemPath) {
-                Write-Host "正在删除系统中的zerotier-cli..." -ForegroundColor Yellow
+                Write-ZTLog "正在删除系统中的zerotier-cli..." -Level Warning -ForegroundColor Yellow
                 Remove-Item -Force $cliSystemPath
-                Write-Host "已成功删除zerotier-cli" -ForegroundColor Green
+                Write-ZTLog "已成功删除zerotier-cli" -Level Info -ForegroundColor Green
             }
 
             if (Test-Path $idtoolSystemPath) {
-                Write-Host "正在删除系统中的zerotier-idtool..." -ForegroundColor Yellow
+                Write-ZTLog "正在删除系统中的zerotier-idtool..." -Level Warning -ForegroundColor Yellow
                 Remove-Item -Force $idtoolSystemPath
-                Write-Host "已成功删除zerotier-idtool" -ForegroundColor Green
+                Write-ZTLog "已成功删除zerotier-idtool" -Level Info -ForegroundColor Green
             }
 
             # 停止并删除TAP服务
-            Write-Host "正在检查并卸载TAP驱动服务..." -ForegroundColor Yellow
+            Write-ZTLog "正在检查并卸载TAP驱动服务..." -Level Warning -ForegroundColor Yellow
             $service = Get-Service -Name $tapServiceName -ErrorAction SilentlyContinue
             if ($service) {
-                Write-Host "找到TAP驱动服务: $tapServiceName，正在停止..." -ForegroundColor Yellow
+                Write-ZTLog "找到TAP驱动服务: $tapServiceName，正在停止..." -Level Warning -ForegroundColor Yellow
                 try {
                     Stop-Service -Name $tapServiceName -Force -ErrorAction Stop
-                    Write-Host "服务已停止，正在删除..." -ForegroundColor Yellow
+                    Write-ZTLog "服务已停止，正在删除..." -Level Warning -ForegroundColor Yellow
                     # 使用SC删除服务
                     $scOutput = sc.exe delete $tapServiceName 2>&1
                     if ($LASTEXITCODE -eq 0 -or $scOutput -match "成功") {
-                        Write-Host "TAP驱动服务成功删除" -ForegroundColor Green
+                        Write-ZTLog "TAP驱动服务成功删除" -Level Info -ForegroundColor Green
                     } else {
-                        Write-Host "警告: TAP驱动服务删除返回未知状态: $LASTEXITCODE" -ForegroundColor Yellow
-                        Write-Host "输出: $scOutput" -ForegroundColor Yellow
+                        Write-ZTLog "警告: TAP驱动服务删除返回未知状态: $LASTEXITCODE" -Level Warning -ForegroundColor Yellow
+                        Write-ZTLog "输出: $scOutput" -Level Warning -ForegroundColor Yellow
                     }
                 } catch {
-                    Write-Host "停止或删除TAP驱动服务失败: $_" -ForegroundColor Red
+                    Write-ZTLog "停止或删除TAP驱动服务失败: $_" -Level Error -ForegroundColor Red
                 }
             } else {
-                Write-Host "未找到TAP驱动服务" -ForegroundColor Yellow
+                Write-ZTLog "未找到TAP驱动服务" -Level Warning -ForegroundColor Yellow
             }
 
             # 卸载TAP驱动
-            Write-Host "正在检查并卸载TAP驱动文件..." -ForegroundColor Yellow
+            Write-ZTLog "正在检查并卸载TAP驱动文件..." -Level Warning -ForegroundColor Yellow
 
             # 查找驱动的OEM名称
             $driverInfo = pnputil /enum-drivers | Select-String -Pattern $tapDriverName -SimpleMatch
@@ -477,7 +624,7 @@ switch ($installChoice) {
                 $matches = [regex]::Matches($driverInfo, $oemPattern)
                 if ($matches.Count -gt 0) {
                     $oemName = $matches[0].Value
-                    Write-Host "找到TAP驱动: $oemName，正在卸载..." -ForegroundColor Yellow
+                    Write-ZTLog "找到TAP驱动: $oemName，正在卸载..." -Level Warning -ForegroundColor Yellow
 
                     try {
                         # 使用pnputil删除驱动
@@ -485,42 +632,42 @@ switch ($installChoice) {
 
                         # 检查卸载结果
                         if ($LASTEXITCODE -eq 0 -or $uninstallOutput -match "成功") {
-                            Write-Host "TAP驱动成功卸载" -ForegroundColor Green
+                            Write-ZTLog "TAP驱动成功卸载" -Level Info -ForegroundColor Green
                         }
                         else {
-                            Write-Host "警告: TAP驱动卸载返回未知状态: $LASTEXITCODE" -ForegroundColor Yellow
-                            Write-Host "输出: $uninstallOutput" -ForegroundColor Yellow
+                            Write-ZTLog "警告: TAP驱动卸载返回未知状态: $LASTEXITCODE" -Level Warning -ForegroundColor Yellow
+                            Write-ZTLog "输出: $uninstallOutput" -Level Warning -ForegroundColor Yellow
                         }
                     }
                     catch {
-                        Write-Host "卸载TAP驱动失败: $_" -ForegroundColor Red
+                        Write-ZTLog "卸载TAP驱动失败: $_" -Level Error -ForegroundColor Red
                     }
                 }
                 else {
-                    Write-Host "警告: 找到TAP驱动但无法确定OEM名称" -ForegroundColor Yellow
+                    Write-ZTLog "警告: 找到TAP驱动但无法确定OEM名称" -Level Warning -ForegroundColor Yellow
                 }
             }
             else {
-                Write-Host "未找到已安装的TAP驱动" -ForegroundColor Yellow
+                Write-ZTLog "未找到已安装的TAP驱动" -Level Warning -ForegroundColor Yellow
             }
 
-            Write-Host "`nZeroTier 已成功卸载！" -ForegroundColor Green
-            Write-Host "卸载操作完成。" -ForegroundColor Green
+            Write-ZTLog "`nZeroTier 已成功卸载！" -Level Info -ForegroundColor Green
+            Write-ZTLog "卸载操作完成。" -Level Info -ForegroundColor Green
             Read-Host "按Enter退出"
             exit 0
         }
         catch {
-            Write-Host "卸载ZeroTier失败: $_" -ForegroundColor Red
+            Write-ZTLog "卸载ZeroTier失败: $_" -Level Error -ForegroundColor Red
             Read-Host "按Enter退出"
             exit 1
         }
     }
     "3" {
-        Write-Host "`n操作已取消，正在退出..." -ForegroundColor Yellow
+        Write-ZTLog "`n操作已取消，正在退出..." -Level Warning -ForegroundColor Yellow
         exit 0
     }
     default {
-        Write-Host "`n无效选择，默认执行安装操作..." -ForegroundColor Red
+        Write-ZTLog "`n无效选择，默认执行安装操作..." -Level Error -ForegroundColor Red
         Start-Sleep -Seconds 2
         # 继续执行安装流程
     }
@@ -528,26 +675,26 @@ switch ($installChoice) {
 
 # 如果是新生成的身份，询问是否替换Planet文件
 if ($isNewIdentity) {
-    Write-Host "`n检测到新生成的身份，您可能需要配置自定义Planet服务器。" -ForegroundColor Yellow
+    Write-ZTLog "`n检测到新生成的身份，您可能需要配置自定义Planet服务器。" -Level Warning -ForegroundColor Yellow
     $replacePlanet = Read-Host "是否需要配置自定义Planet服务器? (Y/N)"
 
     if ($replacePlanet -eq "Y" -or $replacePlanet -eq "y") {
         # 检查planet-replace.ps1是否存在
         if (-not (Test-Path $planetReplacePs1)) {
-            Write-Host "错误：无法找到Planet替换脚本: $planetReplacePs1" -ForegroundColor Red
-            Write-Host "将使用默认Planet服务器继续..." -ForegroundColor Yellow
+            Write-ZTLog "错误：无法找到Planet替换脚本: $planetReplacePs1" -Level Error -ForegroundColor Red
+            Write-ZTLog "将使用默认Planet服务器继续..." -Level Warning -ForegroundColor Yellow
         }
         else {
             # 启动Planet替换脚本
-            Write-Host "启动Planet替换脚本，请按提示操作..." -ForegroundColor Yellow
+            Write-ZTLog "启动Planet替换脚本，请按提示操作..." -Level Warning -ForegroundColor Yellow
             Start-Process powershell.exe -ArgumentList "-ExecutionPolicy Bypass -File `"$planetReplacePs1`"" -Wait -NoNewWindow
-            Write-Host "Planet配置已完成，继续启动过程..." -ForegroundColor Green
+            Write-ZTLog "Planet配置已完成，继续启动过程..." -Level Info -ForegroundColor Green
         }
     }
 }
 
 # 检查TAP驱动是否已安装
-Write-Host "正在检查TAP驱动安装状态..." -ForegroundColor Yellow
+Write-ZTLog "正在检查TAP驱动安装状态..." -Level Info -ForegroundColor Yellow
 $tapDriverInf = Join-Path -Path $tapDriverPath -ChildPath "zttap300.inf"
 $tapDriverSys = Join-Path -Path $tapDriverPath -ChildPath "zttap300.sys"
 $tapDriverCat = Join-Path -Path $tapDriverPath -ChildPath "zttap300.cat"
@@ -560,37 +707,37 @@ $driverInfo = pnputil /enum-drivers | Select-String -Pattern "zttap300" -SimpleM
 
 if ($driverInfo) {
     $tapInstalled = $true
-    Write-Host "TAP驱动已安装" -ForegroundColor Green
+    Write-ZTLog "TAP驱动已安装" -Level Info -ForegroundColor Green
 }
 else {
-    Write-Host "安装TAP驱动..." -ForegroundColor Yellow
+    Write-ZTLog "安装TAP驱动..." -Level Info -ForegroundColor Yellow
 
     # 1. 验证CAT签名
-    Write-Host "验证驱动签名..." -ForegroundColor Yellow
+    Write-ZTLog "验证驱动签名..." -Level Info -ForegroundColor Yellow
     try {
         $catSig = Get-AuthenticodeSignature $tapDriverCat
         if ($catSig.Status -eq "Valid") {
-            Write-Host "驱动签名验证通过" -ForegroundColor Green
+            Write-ZTLog "驱动签名验证通过" -Level Info -ForegroundColor Green
         } else {
-            Write-Host "警告: 驱动签名无效: $($catSig.StatusMessage)" -ForegroundColor Yellow
+            Write-ZTLog "警告: 驱动签名无效: $($catSig.StatusMessage)" -Level Warning -ForegroundColor Yellow
             $continueUnsigned = Read-Host "驱动签名无效，是否继续安装? (Y/N)"
             if ($continueUnsigned -ne "Y" -and $continueUnsigned -ne "y") {
-                Write-Host "操作已取消。" -ForegroundColor Red
+                Write-ZTLog "操作已取消。" -Level Error -ForegroundColor Red
                 exit 1
             }
         }
     }
     catch {
-        Write-Host "警告: 验证驱动签名失败: $_" -ForegroundColor Yellow
+        Write-ZTLog "警告: 验证驱动签名失败: $_" -Level Warning -ForegroundColor Yellow
     }
 
     # 2. 使用pnputil安装INF驱动
     try {
-        Write-Host "正在安装INF驱动..." -ForegroundColor Yellow
+        Write-ZTLog "正在安装INF驱动..." -Level Info -ForegroundColor Yellow
         $pnputilOutput = pnputil /add-driver "$tapDriverInf" /install 2>&1
         # 检查输出是否包含成功信息
         if ($LASTEXITCODE -eq 0 -or $pnputilOutput -match "成功") {
-            Write-Host "TAP驱动INF安装成功" -ForegroundColor Green
+            Write-ZTLog "TAP驱动INF安装成功" -Level Info -ForegroundColor Green
             $tapInstalled = $true
         }
         else {
@@ -598,47 +745,47 @@ else {
         }
     }
     catch {
-        Write-Host "警告: TAP驱动INF安装失败: $_" -ForegroundColor Red
-        Write-Host "原始输出: $pnputilOutput" -ForegroundColor Red
+        Write-ZTLog "警告: TAP驱动INF安装失败: $_" -Level Error -ForegroundColor Red
+        Write-ZTLog "原始输出: $pnputilOutput" -Level Error -ForegroundColor Red
         $continueAnyway = Read-Host "是否继续尝试注册SYS服务? (Y/N)"
         if ($continueAnyway -ne "Y" -and $continueAnyway -ne "y") {
-            Write-Host "操作已取消。" -ForegroundColor Red
+            Write-ZTLog "操作已取消。" -Level Error -ForegroundColor Red
             exit 1
         }
     }
 
     # 3. 注册SYS服务
     try {
-        Write-Host "正在注册TAP驱动服务..." -ForegroundColor Yellow
+        Write-ZTLog "正在注册TAP驱动服务..." -Level Info -ForegroundColor Yellow
         # 检查服务是否已存在
         $existingService = Get-Service -Name $tapServiceName -ErrorAction SilentlyContinue
 
         if (-not $existingService) {
             # 注册新服务
             New-Service -Name $tapServiceName -BinaryPathName $tapDriverSys -DisplayName "ZeroTier TAP Driver" -StartupType Manual
-            Write-Host "服务注册成功" -ForegroundColor Green
+            Write-ZTLog "服务注册成功" -Level Info -ForegroundColor Green
         } else {
-            Write-Host "服务已存在，尝试启动服务" -ForegroundColor Yellow
+            Write-ZTLog "服务已存在，尝试启动服务" -Level Info -ForegroundColor Yellow
         }
 
         # 尝试启动服务
         Start-Service -Name $tapServiceName
-        Write-Host "TAP驱动服务启动成功" -ForegroundColor Green
+        Write-ZTLog "TAP驱动服务启动成功" -Level Info -ForegroundColor Green
         $tapInstalled = $true
     }
     catch {
-        Write-Host "警告: TAP驱动服务注册/启动失败: $_" -ForegroundColor Red
-        Write-Host "ZeroTier可能无法正常工作，网络连接可能受限。" -ForegroundColor Red
+        Write-ZTLog "警告: TAP驱动服务注册/启动失败: $_" -Level Error -ForegroundColor Red
+        Write-ZTLog "ZeroTier可能无法正常工作，网络连接可能受限。" -Level Error -ForegroundColor Red
         $continueAnyway = Read-Host "是否继续启动ZeroTier? (Y/N)"
         if ($continueAnyway -ne "Y" -and $continueAnyway -ne "y") {
-            Write-Host "操作已取消。" -ForegroundColor Red
+            Write-ZTLog "操作已取消。" -Level Error -ForegroundColor Red
             exit 1
         }
     }
 }
 
 # 添加CLI和IDTool到系统环境（优先创建符号链接，失败则复制文件）
-Write-Host "正在添加ZeroTier命令行工具到系统环境..." -ForegroundColor Yellow
+Write-ZTLog "正在添加ZeroTier命令行工具到系统环境..." -Level Info -ForegroundColor Yellow
 
 # 定义系统目标位置
 $systemCmdPath = "C:\Windows\System32"
@@ -647,7 +794,7 @@ $idtoolSystemPath = "$systemCmdPath\zerotier-idtool.bat"
 
 try {
     # 首先尝试创建符号链接（需要管理员权限）
-    Write-Host "尝试创建命令行工具符号链接..." -ForegroundColor Yellow
+    Write-ZTLog "尝试创建命令行工具符号链接..." -Level Info -ForegroundColor Yellow
 
     # 移除现有文件（如果存在）
     if (Test-Path $cliSystemPath) {
@@ -663,13 +810,13 @@ try {
 
     # 验证链接创建成功
     if ((Test-Path $cliSystemPath) -and (Test-Path $idtoolSystemPath)) {
-        Write-Host "符号链接创建成功!" -ForegroundColor Green
+        Write-ZTLog "符号链接创建成功!" -Level Info -ForegroundColor Green
     } else {
         throw "符号链接创建失败"
     }
 }
 catch {
-    Write-Host "符号链接创建失败: $_，使用文件复制方式..." -ForegroundColor Yellow
+    Write-ZTLog "符号链接创建失败: $_，使用文件复制方式..." -Level Warning -ForegroundColor Yellow
 
     # 创建或更新zerotier-cli和zerotier-idtool的包装脚本
     # zerotier-cli包装脚本，添加replace参数支持
@@ -700,20 +847,20 @@ SET ZT_HOME=$dataPath
     try {
         $cliContent | Out-File -FilePath $cliSystemPath -Encoding ASCII -Force
         $idtoolContent | Out-File -FilePath $idtoolSystemPath -Encoding ASCII -Force
-        Write-Host "命令行工具已通过文件复制方式添加到系统路径" -ForegroundColor Green
+        Write-ZTLog "命令行工具已通过文件复制方式添加到系统路径" -Level Info -ForegroundColor Green
     }
     catch {
-        Write-Host "添加命令行工具到系统环境失败: $_" -ForegroundColor Red
+        Write-ZTLog "添加命令行工具到系统环境失败: $_" -Level Error -ForegroundColor Red
         $continueAnyway = Read-Host "是否继续运行ZeroTier? (Y/N)"
         if ($continueAnyway -ne "Y" -and $continueAnyway -ne "y") {
-            Write-Host "操作已取消。" -ForegroundColor Red
+            Write-ZTLog "操作已取消。" -Level Error -ForegroundColor Red
             exit 1
         }
     }
 }
 
-Write-Host "命令行工具已配置完成" -ForegroundColor Green
-Write-Host "您现在可以在任何命令提示符中使用 'zerotier-cli' 和 'zerotier-idtool' 命令。" -ForegroundColor Green
+Write-ZTLog "命令行工具已配置完成" -Level Info -ForegroundColor Green
+Write-ZTLog "您现在可以在任何命令提示符中使用 'zerotier-cli' 和 'zerotier-idtool' 命令。" -Level Info -ForegroundColor Green
 
 # 启动ZeroTier，指定数据目录
 $startArgs = @(
@@ -730,67 +877,67 @@ $null = [Console]::CancelKeyPress.Connect({
     param($sender, $e)
     $global:ctrlCPressed = $true
     $e.Cancel = $true  # 阻止立即终止，让我们有机会清理
-    Write-Host "`n检测到Ctrl+C，正在准备清理环境..." -ForegroundColor Yellow
+    Write-ZTLog "`n检测到Ctrl+C，正在准备清理环境..." -Level Warning -ForegroundColor Yellow
 })
 
 try {
     # 启动ZeroTier
     $process = Start-Process -FilePath $zerotierExe -ArgumentList $startArgs -PassThru -NoNewWindow
-    Write-Host "ZeroTier进程已启动，PID: $($process.Id)" -ForegroundColor Green
+    Write-ZTLog "ZeroTier进程已启动，PID: $($process.Id)" -Level Info -ForegroundColor Green
 
     # 等待ZeroTier初始化
-    Write-Host "等待ZeroTier初始化..." -ForegroundColor Yellow
+    Write-ZTLog "等待ZeroTier初始化..." -Level Info -ForegroundColor Yellow
     Start-Sleep -Seconds 5
 
     # 获取并显示节点状态
-    Write-Host "`n正在获取节点状态..." -ForegroundColor Yellow
+    Write-ZTLog "`n正在获取节点状态..." -Level Info -ForegroundColor Yellow
     try {
         $nodeStatus = & "$zerotierExe" -q -D"$dataPath" "info" 2>&1
 
         # 将结果转换为字符串以确保一致处理
         $nodeStatusStr = $nodeStatus | Out-String
-        Write-Host "原始状态: $nodeStatusStr" -ForegroundColor Gray
+        Write-ZTLog "原始状态: $nodeStatusStr" -Level Debug -ForegroundColor Gray
 
         # 检查是否有200状态码表示成功
         if ($nodeStatusStr -match "200") {
-            Write-Host "ZeroTier服务启动成功" -ForegroundColor Green
+            Write-ZTLog "ZeroTier服务启动成功" -Level Info -ForegroundColor Green
 
             # 尝试提取节点ID和状态（如果可用）
             if ($nodeStatusStr -match "200 info (\w+)") {
                 $nodeId = $Matches[1]
-                Write-Host "节点ID: $nodeId" -ForegroundColor Cyan
+                Write-ZTLog "节点ID: $nodeId" -Level Info -ForegroundColor Cyan
             }
 
             # 检查各种可能的状态
             if ($nodeStatusStr -match "ONLINE") {
-                Write-Host "节点状态: ONLINE (已连接)" -ForegroundColor Green
-                Write-Host "节点已成功连接到ZeroTier网络！" -ForegroundColor Green
+                Write-ZTLog "节点状态: ONLINE (已连接)" -Level Info -ForegroundColor Green
+                Write-ZTLog "节点已成功连接到ZeroTier网络！" -Level Info -ForegroundColor Green
             }
             elseif ($nodeStatusStr -match "TUNNELED") {
-                Write-Host "节点状态: TUNNELED (通过隧道连接)" -ForegroundColor Green
-                Write-Host "节点已成功通过隧道连接到ZeroTier网络！" -ForegroundColor Green
+                Write-ZTLog "节点状态: TUNNELED (通过隧道连接)" -Level Info -ForegroundColor Green
+                Write-ZTLog "节点已成功通过隧道连接到ZeroTier网络！" -Level Info -ForegroundColor Green
             }
             elseif ($nodeStatusStr -match "OFFLINE") {
-                Write-Host "节点状态: OFFLINE (离线)" -ForegroundColor Yellow
-                Write-Host "节点服务已启动，但尚未连接到网络。" -ForegroundColor Yellow
+                Write-ZTLog "节点状态: OFFLINE (离线)" -Level Warning -ForegroundColor Yellow
+                Write-ZTLog "节点服务已启动，但尚未连接到网络。" -Level Warning -ForegroundColor Yellow
             }
             else {
-                Write-Host "节点状态: 未知" -ForegroundColor Yellow
-                Write-Host "节点状态未明确显示，服务已启动但可能需要检查网络设置。" -ForegroundColor Yellow
+                Write-ZTLog "节点状态: 未知" -Level Warning -ForegroundColor Yellow
+                Write-ZTLog "节点状态未明确显示，服务已启动但可能需要检查网络设置。" -Level Warning -ForegroundColor Yellow
             }
         }
         else {
-            Write-Host "警告: 无法确认ZeroTier服务是否正常启动" -ForegroundColor Red
+            Write-ZTLog "警告: 无法确认ZeroTier服务是否正常启动" -Level Error -ForegroundColor Red
         }
 
         # 显示已加入的网络，完全重写这部分，避免使用数组索引
-        Write-Host "`n已加入的网络：" -ForegroundColor Cyan
+        Write-ZTLog "`n已加入的网络：" -Level Info -ForegroundColor Cyan
         try {
             $networks = & "$zerotierExe" -q -D"$dataPath" "listnetworks" 2>&1
 
             # 转换为字符串便于处理
             $networksStr = $networks | Out-String
-            Write-Host "原始网络列表: $networksStr" -ForegroundColor Gray
+            Write-ZTLog "原始网络列表: $networksStr" -Level Debug -ForegroundColor Gray
 
             # 拆分成行来逐行处理
             $networkLines = $networksStr -split "`n"
@@ -802,44 +949,44 @@ try {
                 if ($line -match "200 listnetworks\s+([0-9a-f]+)") {
                     $foundNetwork = $true
                     $networkId = $Matches[1]
-                    Write-Host "`n- 网络ID: $networkId" -ForegroundColor Green
+                    Write-ZTLog "`n- 网络ID: $networkId" -Level Info -ForegroundColor Green
 
                     # 尝试提取更多信息，但避免使用索引访问
                     if ($line -match "200 listnetworks\s+[0-9a-f]+\s+(\S+)") {
                         $networkName = $Matches[1]
-                        Write-Host "  名称: $networkName" -ForegroundColor Green
+                        Write-ZTLog "  名称: $networkName" -Level Info -ForegroundColor Green
                     }
 
                     # 查找状态信息
                     if ($line -match "OK|PUBLIC|PRIVATE") {
-                        Write-Host "  状态: 已连接" -ForegroundColor Green
+                        Write-ZTLog "  状态: 已连接" -Level Info -ForegroundColor Green
                     }
 
                     # 查找IP信息
                     if ($line -match "(\d+\.\d+\.\d+\.\d+/\d+)") {
                         $ip = $Matches[1]
-                        Write-Host "  IP地址: $ip" -ForegroundColor Green
+                        Write-ZTLog "  IP地址: $ip" -Level Info -ForegroundColor Green
                     }
                 }
             }
 
             if (-not $foundNetwork) {
-                Write-Host "尚未加入任何网络" -ForegroundColor Yellow
+                Write-ZTLog "尚未加入任何网络" -Level Warning -ForegroundColor Yellow
             }
         }
         catch {
-            Write-Host "获取网络列表失败: $_" -ForegroundColor Red
-            Write-Host "尚未加入任何网络或网络信息获取失败" -ForegroundColor Yellow
+            Write-ZTLog "获取网络列表失败: $_" -Level Error -ForegroundColor Red
+            Write-ZTLog "尚未加入任何网络或网络信息获取失败" -Level Warning -ForegroundColor Yellow
         }
     }
     catch {
-        Write-Host "获取节点状态失败: $_" -ForegroundColor Red
-        Write-Host "无法确定节点状态，请检查ZeroTier服务是否正常启动" -ForegroundColor Red
+        Write-ZTLog "获取节点状态失败: $_" -Level Error -ForegroundColor Red
+        Write-ZTLog "无法确定节点状态，请检查ZeroTier服务是否正常启动" -Level Error -ForegroundColor Red
     }
     Start-Sleep -Seconds 4
     Clear-Host
     # 显示使用信息
-    Write-Host @"
+    Write-ZTLog @"
 ===================================================
 ZeroTier便携版已启动！
 
@@ -861,20 +1008,20 @@ ZeroTier便携版已启动！
 要停止ZeroTier:
    关闭此PowerShell窗口或按Ctrl+C
 ===================================================
-"@ -ForegroundColor Cyan
+"@ -Level Info -ForegroundColor Cyan
 
     # 保持脚本运行，直到用户按Ctrl+C或进程终止
-    Write-Host "按Ctrl+C停止ZeroTier并退出..." -ForegroundColor Yellow
+    Write-ZTLog "按Ctrl+C停止ZeroTier并退出..." -Level Warning -ForegroundColor Yellow
     while ($true) {
         # 检查是否按下了Ctrl+C
         if ($global:ctrlCPressed) {
-            Write-Host "正在处理Ctrl+C请求，准备退出..." -ForegroundColor Yellow
+            Write-ZTLog "正在处理Ctrl+C请求，准备退出..." -Level Warning -ForegroundColor Yellow
             break
         }
 
         # 检查ZeroTier进程是否仍在运行
         if (-not (Get-Process -Id $process.Id -ErrorAction SilentlyContinue)) {
-            Write-Host "ZeroTier进程已终止，正在退出..." -ForegroundColor Red
+            Write-ZTLog "ZeroTier进程已终止，正在退出..." -Level Error -ForegroundColor Red
             break
         }
 
@@ -883,30 +1030,30 @@ ZeroTier便携版已启动！
     }
 }
 catch {
-    Write-Host "ZeroTier运行过程中出错: $_" -ForegroundColor Red
+    Write-ZTLog "ZeroTier运行过程中出错: $_" -Level Error -ForegroundColor Red
 }
 finally {
     # 清理工作
-    Write-Host "正在执行退出清理..." -ForegroundColor Yellow
+    Write-ZTLog "正在执行退出清理..." -Level Warning -ForegroundColor Yellow
 
     # 1. 停止ZeroTier进程
     if ($process -and (Get-Process -Id $process.Id -ErrorAction SilentlyContinue)) {
-        Write-Host "正在停止ZeroTier进程..." -ForegroundColor Yellow
+        Write-ZTLog "正在停止ZeroTier进程..." -Level Warning -ForegroundColor Yellow
         try {
             $process.Kill()
             $process.WaitForExit(5000)
-            Write-Host "ZeroTier进程已停止" -ForegroundColor Green
+            Write-ZTLog "ZeroTier进程已停止" -Level Info -ForegroundColor Green
         }
         catch {
-            Write-Host "停止ZeroTier进程失败: $_" -ForegroundColor Red
+            Write-ZTLog "停止ZeroTier进程失败: $_" -Level Error -ForegroundColor Red
         }
     }
 
     # 2. 清理环境
     Clean-Environment -systemCmdPath "C:\Windows\System32" -tempPath $runtimePath
 
-    Write-Host "ZeroTier便携版已完全退出" -ForegroundColor Green
-    Write-Host "您可以安全地移除U盘了" -ForegroundColor Cyan
+    Write-ZTLog "ZeroTier便携版已完全退出" -Level Info -ForegroundColor Green
+    Write-ZTLog "您可以安全地移除U盘了" -Level Info -ForegroundColor Cyan
 
     # 等待用户确认
     if (-not $global:ctrlCPressed) {

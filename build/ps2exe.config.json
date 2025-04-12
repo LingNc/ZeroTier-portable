@@ -1,5 +1,5 @@
 ﻿{
-    "inputFile": "main.ps1",
+    "inputFile": "build\\main.ps1",
     "outputFile": "ZeroTier-portable.exe",
     "versionInfo": {
         "fileVersion": "1.2.0.0",
@@ -15,6 +15,18 @@
         "noConsole": false,
         "supportOS": true,
         "DPIAware": true
+    },
+    "buildOptions": {
+        "compressPackage": true,
+        "embedMethods": {
+            "compressed": [
+                "bin\\*",
+                "ps\\*"
+            ],
+            "direct": [
+            ],
+            "ignore": []
+        }
     },
     "package": [
         "bin\\*",

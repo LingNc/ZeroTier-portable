@@ -1,7 +1,7 @@
 ﻿# ZeroTier便携版启动脚本
 # 此脚本用于启动便携版ZeroTier
 # 作者: LingNc
-# 版本: 1.1.4
+# 版本: 1.1.5
 # 日期: 2025-04-10
 
 # 参数定义 - 必须在脚本开头定义
@@ -40,7 +40,7 @@ if (-not $isAdmin) {
 }
 
 # 版本
-$version="1.1.4"
+$version="1.1.5"
 
 # 显示帮助信息
 function Show-Help {
@@ -99,6 +99,13 @@ Write-Host @"
 
 # 获取脚本所在目录
 $scriptPath = Split-Path -Parent $MyInvocation.MyCommand.Path
+
+# 处理可能的环境变量路径(从打包EXE中解压)
+if ($env:ZEROTIER_PORTABLE_ROOT) {
+    Write-Host "检测到便携环境变量，使用临时目录: $env:ZEROTIER_PORTABLE_ROOT" -ForegroundColor Yellow
+    $scriptPath = $env:ZEROTIER_PORTABLE_ROOT
+}
+
 $binPath = Join-Path -Path $scriptPath -ChildPath "bin"
 $dataPath = Join-Path -Path $scriptPath -ChildPath "data"
 $psPath = Join-Path -Path $scriptPath -ChildPath "ps"
