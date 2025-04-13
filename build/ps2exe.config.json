@@ -2,7 +2,7 @@
   "inputFile": "build/main.ps1",
   "outputFile": "ZeroTier-portable.exe",
   "versionInfo": {
-    "fileVersion": "1.2.1",
+    "fileVersion": "1.2.3",
     "company": "LingNc",
     "product": "ZeroTier-portable",
     "description": "ZeroTier便携版启动工具",

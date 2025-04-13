@@ -4,3 +4,5 @@
 !*.md
 !*.json
 !.gitignore
+
+temp_main*

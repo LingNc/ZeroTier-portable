@@ -1,7 +1,7 @@
 ﻿# ZeroTier便携版启动脚本
 # 此脚本用于启动便携版ZeroTier
 # 作者: LingNc
-# 版本: 1.2.2
+# 版本: 1.2.4
 # 日期: 2025-04-13
 
 
@@ -14,7 +14,7 @@ param (
     )
 
 # 全局版本变量 - 便于统一管理版本号
-$script:ZT_VERSION="1.2.2"
+$script:ZT_VERSION="1.2.4"
 
 # BEGIN EMBEDDED FILES
 # 此代码段包含直接嵌入到脚本中的文件，使用Base64编码
@@ -234,14 +234,16 @@ function Test-PathSafely {
 # 确定脚本运行模式和路径
 $execMode = "未知"
 $exePath = [System.Diagnostics.Process]::GetCurrentProcess().MainModule.FileName
-if ($exePath -like "*.exe") {
-    # 从EXE运行时，使用临时目录作为程序运行目录
+
+# 通过检查是否有嵌入的文件来判断运行模式
+if (-not [string]::IsNullOrEmpty($script:packageBase64) -and -not ($script:packageBase64 -match "^#")) {
+    # 存在嵌入的文件内容，说明这是打包后的EXE
     $execMode = "EXE模式"
     $runtimePath = Join-Path $env:TEMP "ZeroTier-portable-temp"
     # 获取EXE所在目录，数据目录将存放在这里
     $baseDir = Split-Path -Parent $exePath
 } else {
-    # 直接运行PS1时
+    # 直接运行PS1
     $execMode = "PS1模式"
     $runtimePath = $PSScriptRoot
     $baseDir = $PSScriptRoot
@@ -702,7 +704,37 @@ switch ($installChoice) {
     "2" {
         Write-ZTLog "`n准备卸载 ZeroTier..." -Level Warning -ForegroundColor Yellow
 
-        # 定义系统目标位置
+        # 首先停止所有运行中的zerotier进程
+        Write-ZTLog "检查并停止运行中的ZeroTier进程..." -Level Warning -ForegroundColor Yellow
+        Get-Process -Name "zerotier-one_x64" -ErrorAction SilentlyContinue | ForEach-Object {
+            try {
+                $_.Kill()
+                $_.WaitForExit(5000)
+                Write-ZTLog "已停止进程: $($_.Id)" -Level Info -ForegroundColor Green
+            } catch {
+                Write-ZTLog "停止进程失败: $($_.Id) - $_" -Level Error -ForegroundColor Red
+            }
+        }
+
+        # 检查和删除所有临时目录
+        $tempPaths = @(
+            (Join-Path $env:TEMP "ZeroTier-portable-temp"),
+            $runtimePath
+        )
+
+        foreach ($path in $tempPaths) {
+            if (Test-Path $path) {
+                Write-ZTLog "正在删除临时目录: $path" -Level Warning -ForegroundColor Yellow
+                try {
+                    Remove-Item -Path $path -Recurse -Force -ErrorAction Stop
+                    Write-ZTLog "已成功删除临时目录: $path" -Level Info -ForegroundColor Green
+                } catch {
+                    Write-ZTLog "删除临时目录失败: $path - $_" -Level Error -ForegroundColor Red
+                }
+            }
+        }
+
+        # 定义系统目标位置和命令行工具
         $systemCmdPath = "C:\Windows\System32"
         $cliSystemPath = "$systemCmdPath\zerotier-cli.bat"
         $idtoolSystemPath = "$systemCmdPath\zerotier-idtool.bat"
@@ -1015,12 +1047,17 @@ $startArgs = @(
 $global:ctrlCPressed = $false
 
 # 定义Ctrl+C事件处理器
-$null = [Console]::CancelKeyPress.Connect({
-    param($sender, $e)
+$null = Register-EngineEvent -SourceIdentifier PowerShell.Exiting -Action {
     $global:ctrlCPressed = $true
-    $e.Cancel = $true  # 阻止立即终止，让我们有机会清理
+    Write-ZTLog "`n检测到退出事件，正在准备清理环境..." -Level Warning -ForegroundColor Yellow
+}
+
+# 定义退出捕获
+trap [System.Management.Automation.PipelineStoppedException] {
+    $global:ctrlCPressed = $true
     Write-ZTLog "`n检测到Ctrl+C，正在准备清理环境..." -Level Warning -ForegroundColor Yellow
-})
+    break
+}
 
 try {
     # 启动ZeroTier

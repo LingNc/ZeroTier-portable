@@ -7,4 +7,4 @@
 !**/*.bat
 !bin/tap-driver/*
 !*.json
-.vscode/
+!.vscode/*.*
