@@ -1,59 +1,9 @@
 ﻿# ZeroTier便携版启动脚本
 # 此脚本用于启动便携版ZeroTier
 # 作者: LingNc
-# 版本: 1.2.1
+# 版本: 1.2.2
 # 日期: 2025-04-13
 
-# BEGIN EMBEDDED BIN PACKAGE
-# 此代码段包含嵌入的二进制文件包
-# 此处将在构建过程中自动插入由package-bin.ps1生成的代码
-# 包括Extract-BinaryPackage函数和压缩的二进制数据
-
-# 自定义解压方法，用于EXE模式下提取bin目录
-function Extract-BinDirectory {
-    param(
-        [string]$DestinationPath
-    )
-
-    # 检查是否已经存在Extract-BinaryPackage函数（由构建过程中嵌入）
-    if (Get-Command -Name Extract-BinaryPackage -ErrorAction SilentlyContinue) {
-        # 使用打包的解压函数
-        Write-Host "检测到嵌入的二进制包，正在解压..." -ForegroundColor Yellow
-        $result = Extract-BinaryPackage -DestinationPath $DestinationPath -Force
-        return $result
-    } else {
-        # 回退方案：如果没有嵌入的二进制包，尝试从EXE同目录复制bin目录
-        Write-Host "未检测到嵌入的二进制包，尝试从EXE目录复制..." -ForegroundColor Yellow
-        $srcBinPath = Join-Path -Path $baseDir -ChildPath "bin"
-
-        if (Test-Path $srcBinPath -PathType Container) {
-            # 创建目标目录（如不存在）
-            if (-not (Test-Path $DestinationPath -PathType Container)) {
-                New-Item -Path $DestinationPath -ItemType Directory -Force | Out-Null
-            }
-
-            # 复制文件
-            Copy-Item -Path "$srcBinPath\*" -Destination $DestinationPath -Recurse -Force
-
-            # 验证复制是否成功
-            $binFiles = Get-ChildItem -Path $DestinationPath -Recurse -File
-            if ($binFiles.Count -gt 0) {
-                Write-Host "✓ 成功从EXE目录复制 $($binFiles.Count) 个文件" -ForegroundColor Green
-                return $true
-            } else {
-                Write-Host "复制bin目录文件失败" -ForegroundColor Red
-                return $false
-            }
-        } else {
-            Write-Host "错误: 在EXE目录中未找到bin目录: $srcBinPath" -ForegroundColor Red
-            return $false
-        }
-    }
-}
-# END EMBEDDED BIN PACKAGE
-
-# 全局版本变量 - 便于统一管理版本号
-$script:ZT_VERSION="1.2.1"
 
 # 参数定义 - 必须在脚本开头定义
 param (
@@ -61,9 +11,125 @@ param (
     [switch]$h = $false,
     [switch]$debug = $false,    # 调试模式开关
     [switch]$logOnly = $false   # 仅记录日志但不显示详细输出
-)
+    )
 
-# 定义日志函数 - 记录日志到文件和控制台
+# 全局版本变量 - 便于统一管理版本号
+$script:ZT_VERSION="1.2.2"
+
+# BEGIN EMBEDDED FILES
+# 此代码段包含直接嵌入到脚本中的文件，使用Base64编码
+$script:embeddedFiles = @{
+    # 此处将在构建时由build.ps1自动插入直接嵌入的文件
+    # 格式: "相对路径" = "Base64内容"
+}
+# END EMBEDDED FILES
+
+# BEGIN EMBEDDED ZIP PACKAGE
+# 此代码段包含嵌入的压缩的ZIP base64编码文件包
+# 此处将在构建过程中自动插入由build.ps1生成的代码
+
+$script:packageBase64 = @'
+# 这里将由build.ps1在构建时自动插入压缩的数据
+'@
+
+function Extract-Package {
+    param(
+        [Parameter(Mandatory=$true)]
+        [string]$DestinationPath
+    )
+
+    Write-ZTLog "正在解压文件到 $DestinationPath..." -Level Info -ForegroundColor Yellow
+
+    # 确保目标目录存在
+    if (-not (Test-Path $DestinationPath -PathType Container)) {
+        New-Item -Path $DestinationPath -ItemType Directory -Force | Out-Null
+    }
+
+    try {
+        # 处理压缩包
+        if (-not [string]::IsNullOrEmpty($script:packageBase64) -and -not ($script:packageBase64 -match "^#")) {
+            # 解码Base64数据
+            $bytes = [Convert]::FromBase64String($script:packageBase64)
+            $tempZipFile = Join-Path $env:TEMP "zerotier_package.zip"
+
+            try {
+                # 保存ZIP文件
+                [System.IO.File]::WriteAllBytes($tempZipFile, $bytes)
+
+                # 解压ZIP文件
+                # 首先解压到临时目录，然后移动文件到正确的位置
+                $tempExtractPath = Join-Path $env:TEMP "zerotier_extract_$(Get-Random)"
+                New-Item -Path $tempExtractPath -ItemType Directory -Force | Out-Null
+
+                try {
+                    # 解压文件
+                    Expand-Archive -Path $tempZipFile -DestinationPath $tempExtractPath -Force
+
+                    # 获取根文件夹名称（通常是zerotier-portable）
+                    $rootFolder = Get-ChildItem -Path $tempExtractPath | Select-Object -First 1
+
+                    if ($rootFolder) {
+                        # 移动内容到目标目录
+                        Get-ChildItem -Path $rootFolder.FullName | ForEach-Object {
+                            $targetPath = Join-Path $DestinationPath $_.Name
+                            if (Test-Path $targetPath) {
+                                Remove-Item -Path $targetPath -Recurse -Force
+                            }
+                            Move-Item -Path $_.FullName -Destination $DestinationPath -Force
+                        }
+                    }
+
+                    Write-ZTLog "压缩包解压完成" -Level Info -ForegroundColor Green
+                }
+                finally {
+                    # 清理临时解压目录
+                    if (Test-Path $tempExtractPath) {
+                        Remove-Item -Path $tempExtractPath -Recurse -Force -ErrorAction SilentlyContinue
+                    }
+                }
+            }
+            finally {
+                # 清理临时ZIP文件
+                if (Test-Path $tempZipFile) {
+                    Remove-Item $tempZipFile -Force -ErrorAction SilentlyContinue
+                }
+            }
+        }
+
+        # 处理直接嵌入的文件
+        if ($script:embeddedFiles.Count -gt 0) {
+            Write-ZTLog "正在提取直接嵌入的文件..." -Level Info -ForegroundColor Yellow
+            foreach ($relativePath in $script:embeddedFiles.Keys) {
+                try {
+                    $targetPath = Join-Path $DestinationPath $relativePath
+                    $targetDir = Split-Path -Parent $targetPath
+
+                    # 确保目标目录存在
+                    if (-not (Test-Path $targetDir)) {
+                        New-Item -Path $targetDir -ItemType Directory -Force | Out-Null
+                    }
+
+                    # 解码并写入文件
+                    $bytes = [Convert]::FromBase64String($script:embeddedFiles[$relativePath])
+                    [System.IO.File]::WriteAllBytes($targetPath, $bytes)
+                    Write-ZTLog "已提取: $relativePath" -Level Info -ForegroundColor Green
+                }
+                catch {
+                    Write-ZTLog "提取文件失败 $relativePath`: $_" -Level Error -ForegroundColor Red
+                }
+            }
+        }
+
+        return $true
+    }
+    catch {
+        Write-ZTLog "解压文件失败: $_" -Level Error -ForegroundColor Red
+        return $false
+    }
+}
+# END EMBEDDED ZIP PACKAGE
+
+# 定义日志函数 - 支持日志文件写入和控制台显示
 function Write-ZTLog {
     param (
         [Parameter(Mandatory = $true)]
@@ -72,38 +138,42 @@ function Write-ZTLog {
         [ValidateSet('Info', 'Warning', 'Error', 'Debug')]
         [string]$Level = 'Info',
         [Parameter(Mandatory = $false)]
-        [ConsoleColor]$ForegroundColor
+        [ConsoleColor]$ForegroundColor = [ConsoleColor]::White,
+        [switch]$NoDisplay = $false
     )
 
-    # 生成日志条目
+    # 生成日志条目（带时间戳和等级）
     $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
     $logEntry = "[$timestamp] [$Level] $Message"
 
-    # 如果日志目录已定义，写入日志文件
+    # 写入日志文件
     if ($script:logFile) {
         Add-Content -Path $script:logFile -Value $logEntry -Encoding UTF8 -ErrorAction SilentlyContinue
     }
 
-    # 确定控制台输出的颜色
-    if (-not $ForegroundColor) {
-        switch ($Level) {
-            'Info'    { $ForegroundColor = [ConsoleColor]::White }
-            'Warning' { $ForegroundColor = [ConsoleColor]::Yellow }
-            'Error'   { $ForegroundColor = [ConsoleColor]::Red }
-            'Debug'   { $ForegroundColor = [ConsoleColor]::Cyan }
+    # 控制台显示（根据调试模式和NoDisplay决定显示方式）
+    if (-not $NoDisplay) {
+        if ($debug) {
+            # 调试模式下显示完整日志格式
+            Write-Host $logEntry -ForegroundColor $ForegroundColor
+        } else {
+            # 普通模式下仅显示消息
+            Write-Host $Message -ForegroundColor $ForegroundColor
         }
     }
+}
 
-    # 根据调试模式决定是否输出到控制台
-    if ($Level -eq 'Debug' -and -not $debug) {
-        # 如果是Debug级别且未启用调试模式，则不输出到控制台
-        return
-    }
+# 定义纯界面显示函数 - 仅用于界面显示，不写日志
+function Write-ZTDisplay {
+    param (
+        [Parameter(Mandatory = $true)]
+        [string]$Message,
+        [Parameter(Mandatory = $false)]
+        [ConsoleColor]$ForegroundColor = [ConsoleColor]::White
+    )
 
-    # 如果没有启用logOnly模式或是错误信息，则输出到控制台
-    if (-not $logOnly -or $Level -eq 'Error') {
-        Write-Host $logEntry -ForegroundColor $ForegroundColor
-    }
+    # 直接显示到控制台，无需时间戳和级别
+    Write-Host $Message -ForegroundColor $ForegroundColor
 }
 
 # 如果启用了调试模式，调整PowerShell偏好设置
@@ -163,12 +233,13 @@ function Test-PathSafely {
 
 # 确定脚本运行模式和路径
 $execMode = "未知"
-if ($null -ne $MyInvocation.MyCommand.Module) {
-    # 从EXE运行时，使用临时目录作为运行时目录
+$exePath = [System.Diagnostics.Process]::GetCurrentProcess().MainModule.FileName
+if ($exePath -like "*.exe") {
+    # 从EXE运行时，使用临时目录作为程序运行目录
     $execMode = "EXE模式"
-    $runtimePath = Join-Path $env:TEMP "ZeroTier-Portable-Temp-$(Get-Random)"
-    # 获取EXE所在目录作为基础目录
-    $baseDir = Split-Path -Parent ([System.Diagnostics.Process]::GetCurrentProcess().MainModule.FileName)
+    $runtimePath = Join-Path $env:TEMP "ZeroTier-portable-temp"
+    # 获取EXE所在目录，数据目录将存放在这里
+    $baseDir = Split-Path -Parent $exePath
 } else {
     # 直接运行PS1时
     $execMode = "PS1模式"
@@ -176,10 +247,52 @@ if ($null -ne $MyInvocation.MyCommand.Module) {
     $baseDir = $PSScriptRoot
 }
 
+# 定义数据目录（在程序目录下而非隐藏文件夹）
+$dataPath = Join-Path -Path $baseDir -ChildPath "ZeroTierData"
+
 # 输出运行模式和目录信息
 Write-ZTLog "检测到运行模式: $execMode" -Level Info -ForegroundColor Cyan
 Write-ZTLog "基础目录: $baseDir" -Level Debug
 Write-ZTLog "运行时目录: $runtimePath" -Level Debug
+Write-ZTLog "数据目录: $dataPath" -Level Debug
+
+# 在定义路径变量时，就先定义好tap driver路径
+$tapDriverPath = Join-Path -Path $runtimePath -ChildPath "bin\tap-driver"
+
+# 检查和清理临时目录
+$ztTempPath = Join-Path $env:TEMP "ZeroTier-portable-temp"
+if (Test-Path $ztTempPath) {
+    Write-ZTLog "发现已存在的ZeroTier临时目录: $ztTempPath" -Level Warning -ForegroundColor Yellow
+    try {
+        Stop-Process -Name "zerotier-one_x64" -ErrorAction SilentlyContinue
+        Start-Sleep -Seconds 2
+        Remove-Item $ztTempPath -Recurse -Force -ErrorAction Stop
+        Write-ZTLog "已清理旧的临时目录" -Level Info -ForegroundColor Green
+    }
+    catch {
+        Write-ZTLog "清理临时目录失败: $_" -Level Error -ForegroundColor Red
+        Write-ZTLog "请手动删除目录: $ztTempPath" -Level Error -ForegroundColor Red
+        exit 1
+    }
+}
+
+# 确保runtimePath存在
+try {
+    if (-not (Test-Path $runtimePath)) {
+        New-Item -ItemType Directory -Path $runtimePath -Force | Out-Null
+        Write-ZTLog "已创建运行时目录: $runtimePath" -Level Info -ForegroundColor Green
+    }
+}
+catch {
+    Write-ZTLog "创建运行时目录失败: $_" -Level Error -ForegroundColor Red
+    exit 1
+}
+
+# 如果是EXE模式且临时目录存在，先删除
+if ($execMode -eq "EXE模式" -and (Test-Path $runtimePath)) {
+    Write-ZTLog "清理已存在的临时目录..." -Level Info -ForegroundColor Yellow
+    Remove-Item $runtimePath -Recurse -Force -ErrorAction SilentlyContinue
+}
 
 # 定义清理函数
 function Clean-Environment {
@@ -324,41 +437,32 @@ if ($help -or $h) {
 # 显示管理员权限提示
 Write-ZTLog "以管理员权限运行..." -Level Info -ForegroundColor Green
 
-# 显示启动标志
-Write-ZTLog @"
+# 更新启动界面显示
+Write-ZTDisplay @"
 ===================================================
          ZeroTier 便携版启动脚本
          版本: $version
          日期: 2025-04-13
 ===================================================
-"@ -Level Info -ForegroundColor Cyan
+"@ -ForegroundColor Cyan
 
 # 准备运行环境 - 如果从EXE运行，则解压文件到临时目录
 if ($runtimePath -ne $PSScriptRoot) {
     Write-ZTLog "准备运行环境..." -Level Info -ForegroundColor Yellow
 
-    # 创建存储临时文件的目录路径变量
-    $binDest = Join-Path $runtimePath "bin"
-    $psDest = Join-Path $runtimePath "ps"
-    $binSrc = Join-Path $baseDir "bin"
-    $psSrc = Join-Path $baseDir "ps"
-
-    # 清理可能存在的旧临时目录
+    # 创建新的临时目录
     if (Test-PathSafely -Path $runtimePath) {
         Remove-Item $runtimePath -Recurse -Force -ErrorAction SilentlyContinue
         Write-ZTLog "已清理旧的临时目录" -Level Info -ForegroundColor Yellow
     }
 
-    # 创建新的临时目录
+    # 创建目录结构
     New-Item -ItemType Directory -Path $runtimePath -Force -ErrorAction SilentlyContinue | Out-Null
-    New-Item -ItemType Directory -Path $binDest -Force -ErrorAction SilentlyContinue | Out-Null
-    New-Item -ItemType Directory -Path $psDest -Force -ErrorAction SilentlyContinue | Out-Null
 
-    # 优先尝试使用嵌入的二进制包解压bin目录
-    $binExtracted = Extract-BinDirectory -DestinationPath $binDest
-
-    if (-not $binExtracted) {
-        Write-ZTLog "无法解压或复制bin目录，程序可能无法正常运行" -Level Error -ForegroundColor Red
+    # 解压文件到临时目录
+    $extractResult = Extract-Package -DestinationPath $runtimePath
+    if (-not $extractResult) {
+        Write-ZTLog "无法解压或复制运行所需的文件，程序可能无法正常运行" -Level Error -ForegroundColor Red
         $continueAnyway = Read-Host "是否继续尝试运行? (Y/N) [默认: N]"
         if ($continueAnyway -ne "Y" -and $continueAnyway -ne "y") {
             Write-ZTLog "操作已取消" -Level Error -ForegroundColor Red
@@ -366,55 +470,28 @@ if ($runtimePath -ne $PSScriptRoot) {
         }
     }
 
-    # 处理ps脚本目录
-    if (-not (Test-PathSafely -Path $psSrc -Type "目录")) {
-        # 如果源ps目录不存在，在exe模式下创建空目录
-        Write-ZTLog "在EXE模式下查找内嵌ps资源..." -Level Info -ForegroundColor Yellow
-        New-Item -ItemType Directory -Path $psDest -Force -ErrorAction SilentlyContinue | Out-Null
-    }
-    else {
-        # 复制正常的文件夹内容
-        Write-ZTLog "复制ps目录到临时路径..." -Level Info -ForegroundColor Yellow
-        Copy-Item -Path "$psSrc\*" -Destination $psDest -Recurse -Force -ErrorAction SilentlyContinue
-    }
-
     Write-ZTLog "运行环境准备完成" -Level Info -ForegroundColor Green
 }
-
-# 定义数据目录（在U盘上的隐藏文件夹）
-$dataPath = Join-Path -Path $baseDir -ChildPath "ZeroTierData"
 
 # 初始化日志文件
 # 初始化日志路径
 $script:logDir = Join-Path -Path $dataPath -ChildPath "logs"
 $script:logFile = Join-Path -Path $script:logDir -ChildPath "zerotier-portable-$(Get-Date -Format 'yyyyMMdd').log"
 
-# 如果数据目录不存在，创建并设置为隐藏
+# 如果数据目录不存在，创建普通文件夹（不设置隐藏）
 if (-not (Test-PathSafely -Path $dataPath -Type "目录" -CreateIfDirectory)) {
     # 安全性检查 - 目录创建失败的情况
-    Write-ZTLog "无法创建数据目录，尝试使用临时目录..." -Level Warning
-    $dataPath = Join-Path -Path ([System.IO.Path]::GetTempPath()) -ChildPath "ZeroTierData_Temp"
-    New-Item -ItemType Directory -Path $dataPath -Force -ErrorAction SilentlyContinue | Out-Null
-
-    # 更新日志目录
-    $script:logDir = Join-Path -Path $dataPath -ChildPath "logs"
-    if (-not (Test-Path -Path $script:logDir -PathType Container)) {
-        New-Item -Path $script:logDir -ItemType Directory -Force | Out-Null
-    }
-    $script:logFile = Join-Path -Path $script:logDir -ChildPath "zerotier-portable-$(Get-Date -Format 'yyyyMMdd').log"
-    Write-ZTLog "日志位置已更新: $($script:logFile)" -Level Info
+    Write-ZTLog "无法在程序目录创建数据目录: $dataPath" -Level Error -ForegroundColor Red
+    Read-Host "按Enter退出"
+    exit 1
 }
 else {
-    # 尝试设置隐藏属性
-    try {
-        $folder = Get-Item $dataPath -Force -ErrorAction SilentlyContinue
-        if ($folder) {
-            $folder.Attributes = $folder.Attributes -bor [System.IO.FileAttributes]::Hidden
-            Write-ZTLog "已创建数据存储目录: $dataPath (隐藏)" -Level Info -ForegroundColor Green
-        }
-    }
-    catch {
-        Write-ZTLog "无法设置文件夹隐藏属性: $_" -Level Warning
+    Write-ZTLog "已创建数据存储目录: $dataPath" -Level Info -ForegroundColor Green
+
+    # 确保日志目录存在
+    if (-not (Test-Path -Path $script:logDir -PathType Container)) {
+        New-Item -Path $script:logDir -ItemType Directory -Force | Out-Null
+        Write-ZTLog "创建日志目录: $($script:logDir)" -Level Info
     }
 }
 
@@ -424,11 +501,62 @@ if (-not (Test-PathSafely -Path $networksDir -Type "目录" -CreateIfDirectory))
     Write-ZTLog "无法创建networks.d子目录" -Level Warning
 }
 
+# 在data目录初始化后，确保TAP驱动文件存在
+$tapDriverFiles = @(
+    @{
+        Source = Join-Path $tapDriverPath "zttap300.cat"
+        Dest = Join-Path $dataPath "zttap300.cat"
+    },
+    @{
+        Source = Join-Path $tapDriverPath "zttap300.inf"
+        Dest = Join-Path $dataPath "zttap300.inf"
+    },
+    @{
+        Source = Join-Path $tapDriverPath "zttap300.sys"
+        Dest = Join-Path $dataPath "zttap300.sys"
+    }
+)
+
+Write-ZTLog "验证TAP驱动文件..." -Level Info -ForegroundColor Yellow
+
+# 首先验证源文件是否存在
+foreach ($file in $tapDriverFiles) {
+    if (-not (Test-Path $file.Source)) {
+        Write-ZTLog "错误：源驱动文件不存在: $($file.Source)" -Level Error -ForegroundColor Red
+        continue
+    }
+
+    if (-not (Test-Path $file.Dest)) {
+        Write-ZTLog "复制驱动文件: $($file.Source) -> $($file.Dest)" -Level Info -ForegroundColor Yellow
+        try {
+            Copy-Item -Path $file.Source -Destination $file.Dest -Force
+            if (Test-Path $file.Dest) {
+                Write-ZTLog "驱动文件复制成功: $($file.Source)" -Level Info -ForegroundColor Green
+            } else {
+                throw "复制成功但目标文件不存在"
+            }
+        }
+        catch {
+            Write-ZTLog "复制驱动文件失败: $_" -Level Error -ForegroundColor Red
+            Write-ZTLog "源文件: $($file.Source)" -Level Error -ForegroundColor Red
+            Write-ZTLog "目标文件: $($file.Dest)" -Level Error -ForegroundColor Red
+            Write-ZTLog "ZeroTier可能无法正常工作。" -Level Error -ForegroundColor Red
+
+            $continueAnyway = Read-Host "是否继续? (Y/N)"
+            if ($continueAnyway -ne "Y" -and $continueAnyway -ne "y") {
+                exit 1
+            }
+        }
+    }
+    else {
+        Write-ZTLog "驱动文件已存在: $($file.Dest)" -Level Debug -ForegroundColor Gray
+    }
+}
+
 # 更新路径变量以使用新的目录结构
 $binPath = Join-Path -Path $runtimePath -ChildPath "bin"
 $psPath = Join-Path -Path $runtimePath -ChildPath "ps"
 $zerotierExe = Join-Path -Path $binPath -ChildPath "zerotier-one_x64.exe"
-$tapDriverPath = Join-Path -Path $binPath -ChildPath "tap-driver"
 $cliBat = Join-Path -Path $binPath -ChildPath "zerotier-cli.bat"
 $idtoolBat = Join-Path -Path $binPath -ChildPath "zerotier-idtool.bat"
 $createIdentityPs1 = Join-Path -Path $psPath -ChildPath "create-identity.ps1"
@@ -493,10 +621,10 @@ Write-ZTLog @"
 
 "@ -Level Info -ForegroundColor Cyan
 
-Write-ZTLog "请选择操作:" -Level Info -ForegroundColor Yellow
-Write-ZTLog "1. 安装 ZeroTier" -Level Info -ForegroundColor Green
-Write-ZTLog "2. 卸载 ZeroTier" -Level Info -ForegroundColor Yellow
-Write-ZTLog "3. 退出" -Level Info -ForegroundColor Red
+Write-ZTDisplay "请选择操作:" -ForegroundColor Yellow
+Write-ZTDisplay "1. 安装 ZeroTier" -ForegroundColor Green
+Write-ZTDisplay "2. 卸载 ZeroTier" -ForegroundColor Yellow
+Write-ZTDisplay "3. 退出" -ForegroundColor Red
 
 $installChoice = Read-Host "`n请输入选择 (1-3) [默认:1]"
 
@@ -540,9 +668,16 @@ switch ($installChoice) {
                 }
             }
             else {
-                # 使用create-identity.ps1脚本生成身份
-                Write-ZTLog "启动身份管理脚本，请按提示操作..." -Level Warning -ForegroundColor Yellow
-                Start-Process powershell.exe -ArgumentList "-ExecutionPolicy Bypass -File `"$createIdentityPs1`" -auto" -Wait -NoNewWindow
+                # 启动身份管理脚本
+                Write-ZTLog "启动身份管理脚本" -Level Info -ForegroundColor Yellow
+                if ($execMode -eq "EXE模式") {
+                    Write-ZTLog "以EXE模式启动身份管理脚本" -Level Debug
+                    $createIdentityArgs = "-ExecutionPolicy Bypass -File `"$createIdentityPs1`" -fromExe -dataPath `"$dataPath`""
+                } else {
+                    Write-ZTLog "以PS1模式启动身份管理脚本" -Level Debug
+                    $createIdentityArgs = "-ExecutionPolicy Bypass -File `"$createIdentityPs1`""
+                }
+                Start-Process powershell.exe -ArgumentList $createIdentityArgs -Wait -NoNewWindow
 
                 # 检查是否成功生成身份
                 if (Test-Path $identityFile) {
@@ -686,8 +821,15 @@ if ($isNewIdentity) {
         }
         else {
             # 启动Planet替换脚本
-            Write-ZTLog "启动Planet替换脚本，请按提示操作..." -Level Warning -ForegroundColor Yellow
-            Start-Process powershell.exe -ArgumentList "-ExecutionPolicy Bypass -File `"$planetReplacePs1`"" -Wait -NoNewWindow
+            Write-ZTLog "启动Planet替换脚本" -Level Info -ForegroundColor Yellow
+            if ($execMode -eq "EXE模式") {
+                Write-ZTLog "以EXE模式启动Planet替换脚本" -Level Debug
+                $planetReplaceArgs = "-ExecutionPolicy Bypass -File `"$planetReplacePs1`" -fromExe -dataPath `"$dataPath`""
+            } else {
+                Write-ZTLog "以PS1模式启动Planet替换脚本" -Level Debug
+                $planetReplaceArgs = "-ExecutionPolicy Bypass -File `"$planetReplacePs1`""
+            }
+            Start-Process powershell.exe -ArgumentList $planetReplaceArgs -Wait -NoNewWindow
             Write-ZTLog "Planet配置已完成，继续启动过程..." -Level Info -ForegroundColor Green
         }
     }

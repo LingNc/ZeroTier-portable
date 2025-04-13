@@ -96,3 +96,34 @@ finally {
     Write-Host "`n按任意键退出..." -ForegroundColor Cyan
     $null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
 }
+
+# PowerShell错误捕获包装器
+# 用于执行命令并捕获错误
+param(
+    [Parameter(Mandatory=$true)]
+    [string]$Command
+)
+
+try {
+    # 将命令字符串拆分为数组，使用分号作为分隔符
+    $commands = $Command -split ";"
+
+    # 依次执行每个命令
+    foreach ($cmd in $commands) {
+        if (-not [string]::IsNullOrWhiteSpace($cmd)) {
+            Write-Host "执行命令: $cmd" -ForegroundColor Yellow
+            Invoke-Expression $cmd
+
+            # 检查命令执行结果
+            if ($LASTEXITCODE -ne 0) {
+                throw "命令执行失败，错误代码: $LASTEXITCODE"
+            }
+        }
+    }
+
+    exit 0
+}
+catch {
+    Write-Host "错误: $_" -ForegroundColor Red
+    exit 1
+}

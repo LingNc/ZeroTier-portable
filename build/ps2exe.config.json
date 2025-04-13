@@ -1,36 +1,32 @@
 ﻿{
-    "inputFile": "build\\main.ps1",
-    "outputFile": "ZeroTier-portable.exe",
-    "versionInfo": {
-        "fileVersion": "1.2.0.0",
-        "productVersion": "1.2.0.0",
-        "company": "LingNc",
-        "product": "ZeroTier便携版",
-        "description": "ZeroTier 便携版",
-        "copyright": "Copyright © 2025 LingNc",
-        "trademark": "ZeroTier便携版"
-    },
-    "options": {
-        "requireAdmin": true,
-        "noConsole": false,
-        "supportOS": true,
-        "DPIAware": true
-    },
-    "buildOptions": {
-        "compressPackage": true,
-        "embedMethods": {
-            "compressed": [
-            ],
-            "direct": [
-                "bin\\*",
-                "ps\\*"
-            ],
-            "ignore": []
-        }
-    },
-    "package": [
-        "bin\\*",
-        "bin\\tap-driver\\*",
-        "ps\\*"
-    ]
+  "inputFile": "build/main.ps1",
+  "outputFile": "ZeroTier-portable.exe",
+  "versionInfo": {
+    "fileVersion": "1.2.1",
+    "company": "LingNc",
+    "product": "ZeroTier-portable",
+    "description": "ZeroTier便携版启动工具",
+    "copyright": "Copyright (c) 2025 LingNc",
+    "trademark": "LingNc"
+  },
+  "options": {
+    "requireAdmin": true,
+    "noConsole": false,
+    "supportOS": true,
+    "DPIAware": true
+  },
+  "package": {
+    "files": [
+      "bin/**",
+      "ps/*.ps1"
+    ],
+    "excludes": []
+  },
+  "buildOptions": {
+    "compressMethod": "zip",
+    "embedMethods": {
+      "compressed": ["bin/**"],
+      "direct": ["ps/*.ps1"]
+    }
+  }
 }

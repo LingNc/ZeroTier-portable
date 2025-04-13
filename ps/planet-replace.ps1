@@ -7,7 +7,9 @@
 # 参数定义
 param (
     [switch]$help = $false,
-    [switch]$h = $false
+    [switch]$h = $false,
+    [switch]$fromExe = $false,    # 是否从EXE运行
+    [string]$dataPath = ""        # 数据目录路径
 )
 
 # 版本
@@ -94,11 +96,31 @@ Write-Host @"
 
 # 获取脚本所在目录
 $scriptPath = Split-Path -Parent $MyInvocation.MyCommand.Path
-# 获取根目录（当前目录的父目录）
-$rootPath = Split-Path -Parent $scriptPath
-$binPath = Join-Path -Path $rootPath -ChildPath "bin"
-$dataPath = Join-Path -Path $rootPath -ChildPath "data"
-$zerotierExe = Join-Path -Path $binPath -ChildPath "zerotier-one_x64.exe"
+
+# 根据fromExe参数决定根目录和数据目录位置
+if ($fromExe) {
+    # 如果没有提供dataPath，报错退出
+    if ([string]::IsNullOrEmpty($dataPath)) {
+        Write-Host "错误：未提供数据目录路径" -ForegroundColor Red
+        exit 1
+    }
+
+    # EXE模式：使用传入的数据目录，可执行文件在上层目录的bin中
+    $rootPath = Split-Path -Parent $scriptPath # ps目录的上层目录
+    $binPath = Join-Path -Path $rootPath -ChildPath "bin"
+    $zerotierExe = Join-Path -Path $binPath -ChildPath "zerotier-one_x64.exe"
+} else {
+    # PS1模式：使用脚本所在目录的父目录
+    $rootPath = Split-Path -Parent $scriptPath
+    $binPath = Join-Path -Path $rootPath -ChildPath "bin"
+    $zerotierExe = Join-Path -Path $binPath -ChildPath "zerotier-one_x64.exe"
+    $dataPath = Join-Path -Path $rootPath -ChildPath "ZeroTierData"
+}
+
+Write-Host "使用根目录: $rootPath" -ForegroundColor Yellow
+Write-Host "使用数据目录: $dataPath" -ForegroundColor Yellow
+
+# 设置其他路径
 $planetFile = Join-Path -Path $dataPath -ChildPath "planet"
 
 # 检查组件是否存在
