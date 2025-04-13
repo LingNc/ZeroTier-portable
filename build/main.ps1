@@ -1,9 +1,22 @@
 ﻿# ZeroTier便携版启动脚本
 # 此脚本用于启动便携版ZeroTier
 # 作者: LingNc
-# 版本: 1.2.4
+# 版本: 1.2.5
 # 日期: 2025-04-13
 
+<#
+MIT License
+Copyright © 2025 绫袅LingNc
+
+使用说明:
+    该脚本用于便携版ZeroTier的安装、启动、管理和卸载。
+    可以由build.ps1打包为EXE或PS1格式运行。
+    使用-help参数查看详细帮助信息。
+
+许可声明：
+    本软件基于MIT协议开源，允许任何人使用、修改和分发，但需要保留版权声明。
+    软件按"原样"提供，不提供任何明示或暗示的保证。
+#>
 
 # 参数定义 - 必须在脚本开头定义
 param (
@@ -14,7 +27,7 @@ param (
     )
 
 # 全局版本变量 - 便于统一管理版本号
-$script:ZT_VERSION="1.2.4"
+$script:ZT_VERSION="1.2.5"
 
 # BEGIN EMBEDDED FILES
 # 此代码段包含直接嵌入到脚本中的文件，使用Base64编码
@@ -242,15 +255,16 @@ if (-not [string]::IsNullOrEmpty($script:packageBase64) -and -not ($script:packa
     $runtimePath = Join-Path $env:TEMP "ZeroTier-portable-temp"
     # 获取EXE所在目录，数据目录将存放在这里
     $baseDir = Split-Path -Parent $exePath
+    # EXE模式下使用ZeroTierData作为数据目录
+    $dataPath = Join-Path -Path $baseDir -ChildPath "ZeroTierData"
 } else {
     # 直接运行PS1
     $execMode = "PS1模式"
-    $runtimePath = $PSScriptRoot
-    $baseDir = $PSScriptRoot
+    $baseDir = Split-Path -Parent $PSScriptRoot # 获取build文件夹的父目录
+    $runtimePath = $baseDir # PS1模式下runtime就是项目根目录
+    # PS1模式下使用data作为数据目录
+    $dataPath = Join-Path -Path $baseDir -ChildPath "data"
 }
-
-# 定义数据目录（在程序目录下而非隐藏文件夹）
-$dataPath = Join-Path -Path $baseDir -ChildPath "ZeroTierData"
 
 # 输出运行模式和目录信息
 Write-ZTLog "检测到运行模式: $execMode" -Level Info -ForegroundColor Cyan
@@ -443,13 +457,13 @@ Write-ZTLog "以管理员权限运行..." -Level Info -ForegroundColor Green
 Write-ZTDisplay @"
 ===================================================
          ZeroTier 便携版启动脚本
-         版本: $version
+          版本: $version
          日期: 2025-04-13
 ===================================================
 "@ -ForegroundColor Cyan
 
-# 准备运行环境 - 如果从EXE运行，则解压文件到临时目录
-if ($runtimePath -ne $PSScriptRoot) {
+# 准备运行环境
+if ($execMode -eq "EXE模式") {
     Write-ZTLog "准备运行环境..." -Level Info -ForegroundColor Yellow
 
     # 创建新的临时目录
@@ -473,6 +487,23 @@ if ($runtimePath -ne $PSScriptRoot) {
     }
 
     Write-ZTLog "运行环境准备完成" -Level Info -ForegroundColor Green
+} else {
+    # PS1模式下更新路径
+    $binPath = Join-Path -Path $runtimePath -ChildPath "bin"
+    $psPath = Join-Path -Path $runtimePath -ChildPath "ps"
+    $tapDriverPath = Join-Path -Path $binPath -ChildPath "tap-driver"
+
+    # 检查必要的目录结构
+    $requiredDirs = @($binPath, $psPath, (Join-Path $binPath "tap-driver"))
+    foreach ($dir in $requiredDirs) {
+        if (-not (Test-Path $dir -PathType Container)) {
+            Write-ZTLog "错误: 必要的目录不存在: $dir" -Level Error -ForegroundColor Red
+            Write-ZTLog "请确保程序目录结构完整。" -Level Error -ForegroundColor Red
+            exit 1
+        }
+    }
+
+    Write-ZTLog "目录结构检查完成" -Level Info -ForegroundColor Green
 }
 
 # 初始化日志文件

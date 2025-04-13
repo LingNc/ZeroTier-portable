@@ -1,6 +1,6 @@
 ﻿{
   "inputFile": "build/main.ps1",
-  "outputFile": "ZeroTier-portable.exe",
+  "outputFile": "releases/ZeroTier-portable.exe",
   "versionInfo": {
     "fileVersion": "1.2.3",
     "company": "LingNc",
