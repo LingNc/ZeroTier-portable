@@ -1,0 +1,80 @@
+﻿# ZeroTier-portable 打包配置文件
+# 作者: LingNc
+
+# 构建目标列表 (exe: 可执行文件, zip: 压缩包)
+buildTargets:
+  - exe
+  - zip
+
+# EXE 版本配置
+exe:
+  # 输入文件 (主脚本)
+  inputFile: build/main.ps1
+
+  # 输出路径
+  outputFile: releases/ZeroTier-portable.exe
+
+  # 图标文件
+  iconFile: build/icon.ico
+
+  # 版本信息
+  versionInfo:
+    fileVersion: 0.3.7
+    company: LingNc
+    product: ZeroTier-portable
+    description: ZeroTier便携版启动工具
+    copyright: Copyright (c) 2025 LingNc
+    trademark: LingNc
+
+  # EXE 选项
+  options:
+    # 是否需要管理员权限
+    requireAdmin: true
+
+    # 是否隐藏控制台窗口
+    noConsole: false
+
+    # 是否支持新版 Windows 功能
+    supportOS: true
+
+    # DPI 感知支持
+    DPIAware: true
+
+  # 构建选项
+  buildOptions:
+    # 压缩方法
+    compressMethod: zip
+
+    # 文件嵌入方式
+    embedMethods:
+      # 压缩嵌入的文件列表
+      compressed:
+        - bin/**
+
+      # 直接嵌入的文件列表
+      direct:
+        - ps/*.ps1
+        - README.md
+
+# ZIP 版本配置
+zip:
+  # 输出文件路径
+  outputFile: releases/ZeroTier-portable.zip
+
+  # 结构配置
+  structure:
+    # 根文件夹名称
+    rootFolder: ZeroTier-portable
+
+    # 主脚本名称
+    mainScript: start.ps1
+
+  # 要包含的文件
+  files:
+    - bin/**
+    - ps/*.ps1
+    - README.md
+    - LICENSE
+
+  # 要排除的文件
+  excludes: []

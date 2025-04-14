@@ -2,7 +2,7 @@
 !*.ps1
 !*.exe
 !*.md
-!*.json
+!*.yaml
 !.gitignore
 !icon.ico
 

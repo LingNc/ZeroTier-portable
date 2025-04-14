@@ -1,11 +1,15 @@
 # ZeroTier-Portable / ZeroTier便携版
 
+**依赖声明**
+> 本项目使用 [ZeroTier](https://www.zerotier.com/) 的可执行文件`zerotier-one_x64`作为基础组件，
+  其许可条款详见 [ZeroTier LICENSE](https://github.com/zerotier/ZeroTierOne/blob/master/LICENSE.txt)
+
 ### 简介
 ZeroTier便携版是一个可以存储在U盘上随身携带的ZeroTier客户端解决方案，无需安装，即插即用，并且可以在多台Windows计算机间保持相同的网络身份标识。
 
 ### 协议
-MIT开源协议
-版权所有 © 2025 绫袅LingNc
+本项目代码采用 MIT 协议，但其中包含的 ZeroTier 组件仅限非商业使用。
+商业用户需直接联系 ZeroTier 公司获取授权。
 
 ### 快速开始
 1. 下载最新版本：
@@ -15,15 +19,16 @@ MIT开源协议
 2. EXE模式使用方法：
    - 双击运行`ZeroTier-portable.exe`
    - 首次运行会请求管理员权限
-   - 按照界面提示完成配置
+   - 第一次需要按照界面提示完成初始化配置
+   - 之后都直接遵循`ZeroTierData`的配置运行
 
 3. PS1模式使用方法：
    - 解压PS1包到任意位置
    - 右键`start.ps1`选择"使用PowerShell运行"
-   - 遵循界面提示完成配置
+   - 第一次请遵循界面提示完成初始化配置
 
 ### 主要功能
-- 完全便携，数据集中存储
+- 完全便携，安全的数据集中存储
 - 双模式运行(EXE/PS1)
 - 身份管理系统
 - 自定义Planet服务器
@@ -169,23 +174,16 @@ ZeroTier-portable/
 3. 错误信息
 4. 日志文件
 
-### 贡献代码
-欢迎提交Pull Request，请确保：
-1. 代码风格统一
-2. 添加注释说明
-3. 更新文档
-4. 测试通过
-
 ### 开发环境
 - Windows 10/11
 - PowerShell 5.1+
 - PS2EXE模块
+- powershell-yaml模块
 - Visual Studio Code
 
 ### 致谢
 - ZeroTier官方
 - PowerShell社区
-- 所有贡献者
 
 ---
 Made with ❤️ by LingNc
