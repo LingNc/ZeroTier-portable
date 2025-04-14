@@ -1,7 +1,7 @@
 ﻿# ZeroTier便携版启动脚本
 # 此脚本用于启动便携版ZeroTier
 # 作者: LingNc
-# 版本: v0.3.7-alpha
+# 版本: v0.3.9-alpha
 # 日期: 2025-04-13
 
 <#
@@ -27,7 +27,7 @@ param (
     )
 
 # 全局版本变量 - 便于统一管理版本号
-$script:ZT_VERSION="v0.3.7-alpha"
+$script:ZT_VERSION="v0.3.9-alpha"
 
 # BEGIN EMBEDDED FILES
 # 此代码段包含直接嵌入到脚本中的文件，使用Base64编码
@@ -133,7 +133,6 @@ function Extract-Package {
                 }
             }
         }
-
         return $true
     }
     catch {
@@ -556,6 +555,43 @@ else {
         Write-ZTLog "创建日志目录: $($script:logDir)" -Level Info
     }
 }
+
+# 创建ZeroTierData目录的符号链接
+try {
+    # 只在EXE模式下且ZeroTierData目录存在时创建符号链接
+    if ($execMode -eq "EXE模式" -and (Test-Path $dataPath -PathType Container)) {
+        Write-ZTLog "检测到ZeroTierData目录，创建符号链接..." -Level Info -ForegroundColor Yellow
+
+        # 创建符号链接的目标路径
+        $linkPath = Join-Path $runtimePath "data"
+
+        # 移除目标路径如果已存在
+        if (Test-Path $linkPath) {
+            Remove-Item $linkPath -Force -Recurse -ErrorAction Stop
+            Write-ZTLog "已移除现有目标路径" -Level Info -ForegroundColor Yellow
+        }
+
+        # 创建符号链接 (需要管理员权限)
+        $mkLinkResult = cmd /c mklink /D "$linkPath" "$dataPath" 2>&1
+
+        # 验证符号链接是否创建成功
+        if (Test-Path $linkPath -PathType Container) {
+            Write-ZTLog "成功创建ZeroTierData符号链接: $dataPath -> $linkPath" -Level Info -ForegroundColor Green
+        } else {
+            Write-ZTLog "警告: 符号链接创建可能失败，返回结果: $mkLinkResult" -Level Warning -ForegroundColor Yellow
+        }
+    } else {
+        if ($execMode -ne "EXE模式") {
+            Write-ZTLog "非EXE模式，跳过创建符号链接" -Level Info -ForegroundColor Yellow
+        } elseif (-not (Test-Path $dataPath -PathType Container)) {
+            Write-ZTLog "ZeroTierData目录不存在: $dataPath" -Level Info -ForegroundColor Yellow
+        }
+    }
+} catch {
+    Write-ZTLog "创建ZeroTierData符号链接失败: $_" -Level Error -ForegroundColor Red
+    # 继续执行，不因为符号链接失败而中断整个流程
+}
+
 
 # 确保networks.d子目录存在
 $networksDir = Join-Path -Path $dataPath -ChildPath "networks.d"
@@ -1228,6 +1264,8 @@ try {
     Write-ZTLog @"
 ===================================================
 ZeroTier便携版已启动！
+查看节点，请运行:
+   zerotier-cli peers
 
 要加入网络，请运行:
    zerotier-cli join <网络ID>

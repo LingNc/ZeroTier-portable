@@ -145,20 +145,21 @@ ZeroTier-portable/
 1. **EXE模式**
    - 资源打包在EXE内
    - 运行时解压到临时目录
-   - 使用ZeroTierData保存配置
+   - 使用ZeroTierData保存配置(该配置会在运行时被链接到`%TEMP%`的指定文件夹中，供程序访问使用)
+      所以在EXE模式下，使用命令行工具查看身份(`zerotier-idtool inter`)的时候，查看身份会显示在`%TEMP%`文件夹中
 
 2. **PS1模式**
    - 包含完整源文件结构
-   - 通过start.ps1启动
+   - 通过`start.ps1`启动
    - 便于修改和定制
 
 #### 构建过程
-1. 使用build.ps1进行构建：
+1. 使用`build.ps1`进行构建：
    - 编译EXE版本(嵌入式资源)
    - 打包PS1版本(完整文件结构)
-   - 临时文件存储在build/temp目录
+   - 临时文件存储在`build/temp`目录
 
-2. 构建配置(ps2exe.config.json):
+2. 构建配置(`ps2exe.config.json`):
    - 分离EXE与PS1模式配置
    - 自定义版本信息和图标
    - 灵活的文件打包规则

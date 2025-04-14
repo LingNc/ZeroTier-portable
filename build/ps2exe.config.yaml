@@ -19,7 +19,7 @@ exe:
 
   # 版本信息
   versionInfo:
-    fileVersion: 0.3.7
+    fileVersion: 0.3.9
     company: LingNc
     product: ZeroTier-portable
     description: ZeroTier便携版启动工具
