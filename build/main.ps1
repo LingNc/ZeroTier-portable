@@ -1,7 +1,7 @@
 ﻿# ZeroTier便携版启动脚本
 # 此脚本用于启动便携版ZeroTier
 # 作者: LingNc
-# 版本: v0.3.6-alpha
+# 版本: v0.3.7-alpha
 # 日期: 2025-04-13
 
 <#
@@ -27,7 +27,7 @@ param (
     )
 
 # 全局版本变量 - 便于统一管理版本号
-$script:ZT_VERSION="v0.3.6-alpha"
+$script:ZT_VERSION="v0.3.7-alpha"
 
 # BEGIN EMBEDDED FILES
 # 此代码段包含直接嵌入到脚本中的文件，使用Base64编码
@@ -44,6 +44,7 @@ $script:embeddedFiles = @{
 $script:packageBase64 = @'
 # 这里将由build.ps1在构建时自动插入压缩的数据
 '@
+# END EMBEDDED ZIP PACKAGE
 
 function Extract-Package {
     param(
@@ -140,7 +141,6 @@ function Extract-Package {
         return $false
     }
 }
-# END EMBEDDED ZIP PACKAGE
 
 # 定义日志函数 - 支持日志文件写入和控制台显示
 function Write-ZTLog {
@@ -684,8 +684,8 @@ Write-ZTLog @"
 "@ -Level Info -ForegroundColor Cyan
 
 Write-ZTDisplay "请选择操作:" -ForegroundColor Yellow
-Write-ZTDisplay "1. 安装 ZeroTier" -ForegroundColor Green
-Write-ZTDisplay "2. 卸载 ZeroTier" -ForegroundColor Yellow
+Write-ZTDisplay "1. 启动 ZeroTier" -ForegroundColor Green
+Write-ZTDisplay "2. 清理 ZeroTier" -ForegroundColor Yellow
 Write-ZTDisplay "3. 退出" -ForegroundColor Red
 
 $installChoice = Read-Host "`n请输入选择 (1-3) [默认:1]"

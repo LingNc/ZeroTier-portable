@@ -5,7 +5,7 @@
     "outputFile": "releases/ZeroTier-portable.exe",
     "iconFile": "build/icon.ico",
     "versionInfo": {
-      "fileVersion": "0.3.6",
+      "fileVersion": "0.3.7",
       "company": "LingNc",
       "product": "ZeroTier-portable",
       "description": "ZeroTier便携版启动工具",

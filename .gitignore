@@ -6,6 +6,7 @@
 !bin/*.exe
 !releases/*.exe
 !releases/*.zip
+!releases/**/*.ps1
 !**/*.bat
 !bin/tap-driver/*
 !*.json

@@ -15,7 +15,7 @@ if (!$scriptPath) { $scriptPath = Split-Path -Parent $MyInvocation.MyCommand.Pat
 $rootPath = Split-Path -Parent $scriptPath
 
 # 配置文件路径
-$configFile = Join-Path $scriptPath "ps2exe.config.json"
+$configFile = Join-Path $scriptPath "ps2exe.config.yaml"
 
 # 创建临时文件目录
 $tempRoot = Join-Path $scriptPath "temp"
@@ -26,6 +26,158 @@ if (-not (Test-Path $tempRoot)) {
 #endregion
 
 #region 辅助函数
+
+# 解析YAML文件
+function ConvertFrom-Yaml {
+    param(
+        [string]$YamlContent
+    )
+
+    # 检查是否安装了PowerShell-yaml模块
+    $yamlModule = Get-Module -ListAvailable -Name powershell-yaml
+    if ($yamlModule) {
+        # 确保已经导入模块
+        Import-Module -Name powershell-yaml -ErrorAction SilentlyContinue
+        # 使用模块的ConvertFrom-Yaml函数，但需要避免递归调用
+        return (& (Get-Module powershell-yaml) { param($yaml) ConvertFrom-Yaml -Yaml $yaml } $YamlContent)
+    }
+
+    # 简单的YAML解析器实现（无递归）
+    try {
+        # 创建空的哈希表
+        $result = @{}
+
+        # 当前节点堆栈
+        $nodeStack = New-Object System.Collections.Stack
+        $nodeStack.Push($result)
+
+        $indentStack = New-Object System.Collections.Stack
+        $indentStack.Push(0)
+
+        # 分割行
+        $lines = $YamlContent -split "`r?`n"
+
+        # 当前路径
+        $currentPath = ""
+
+        foreach ($line in $lines) {
+            # 跳过注释行和空行
+            if ($line -match '^\s*#' -or $line -match '^\s*$') {
+                continue
+            }
+
+            # 获取缩进级别和内容
+            if ($line -match '^(\s*)(.+)$') {
+                $indent = $Matches[1].Length
+                $content = $Matches[2].Trim()
+
+                # 处理缩进层级变化
+                while ($indentStack.Count -gt 0 -and $indentStack.Peek() -gt $indent) {
+                    $indentStack.Pop()
+                    $nodeStack.Pop()
+                }
+
+                $currentNode = $nodeStack.Peek()
+
+                # 处理列表项和键值对
+                if ($content -match '^-\s+(.+)$') {
+                    # 处理列表项
+                    $listItem = $Matches[1].Trim()
+
+                    # 如果是键值对形式的列表项
+                    if ($listItem -match '^(.+?):\s*(.*)$') {
+                        $key = $Matches[1].Trim()
+                        $value = $Matches[2].Trim()
+
+                        # 创建一个新的对象作为列表项
+                        $newItem = @{}
+                        $newItem[$key] = ParseYamlValue $value
+
+                        # 添加到当前节点的列表中
+                        if (-not $currentNode[-1]) {
+                            $currentNode[-1] = @()
+                        }
+                        $currentNode[-1] += $newItem
+                    } else {
+                        # 简单值的列表项
+                        if (-not $currentNode[-1]) {
+                            $currentNode[-1] = @()
+                        }
+                        $currentNode[-1] += ParseYamlValue $listItem
+                    }
+                }
+                elseif ($content -match '^(.+?):\s*(.*)$') {
+                    # 处理键值对
+                    $key = $Matches[1].Trim()
+                    $value = $Matches[2].Trim()
+
+                    if ($value -eq '') {
+                        # 空值或子对象的开始
+                        $newNode = @{}
+                        $currentNode[$key] = $newNode
+                        $nodeStack.Push($newNode)
+                        $indentStack.Push($indent + 2)
+                    } else {
+                        # 简单的键值对
+                        $currentNode[$key] = ParseYamlValue $value
+                    }
+                }
+            }
+        }
+
+        return $result
+    }
+    catch {
+        Write-Host "内置YAML解析器错误: $_" -ForegroundColor Red
+
+        # 尝试安装并使用PowerShell-YAML模块
+        try {
+            Write-Host "尝试安装PowerShell-YAML模块..." -ForegroundColor Yellow
+            Install-Module -Name powershell-yaml -Scope CurrentUser -Force
+            Import-Module powershell-yaml
+            Write-Host "PowerShell-YAML模块安装成功，使用模块解析YAML" -ForegroundColor Green
+            # 避免递归调用
+            return (& (Get-Module powershell-yaml) { param($yaml) ConvertFrom-Yaml -Yaml $yaml } $YamlContent)
+        }
+        catch {
+            Write-Host "无法安装PowerShell-YAML模块: $_" -ForegroundColor Red
+            throw "无法解析YAML内容，请检查格式或手动安装PowerShell-YAML模块"
+        }
+    }
+}
+
+# 辅助函数：解析YAML值
+function ParseYamlValue {
+    param(
+        [string]$Value
+    )
+
+    # 处理特殊值类型
+    if ($Value -eq "") {
+        return $null
+    }
+    elseif ($Value -eq "true" -or $Value -eq "yes") {
+        return $true
+    }
+    elseif ($Value -eq "false" -or $Value -eq "no") {
+        return $false
+    }
+    elseif ($Value -eq "[]") {
+        return @()
+    }
+    elseif ($Value -eq "{}") {
+        return @{}
+    }
+    elseif ($Value -match '^[0-9]+$') {
+        return [int]$Value
+    }
+    elseif ($Value -match '^[0-9]+\.[0-9]+$') {
+        return [double]$Value
+    }
+    else {
+        return $Value
+    }
+}
 
 # 检查并安装ps2exe模块
 function Initialize-PS2EXEModule {
@@ -641,11 +793,41 @@ function Start-Packaging {
 
     # 读取配置文件
     try {
-        $config = Get-Content $configFile -Raw | ConvertFrom-Json
-        Write-Host "已成功读取配置文件" -ForegroundColor Green
+        # 尝试安装和使用PowerShell-YAML模块
+        $yamlModule = Get-Module -ListAvailable -Name powershell-yaml
+        if (-not $yamlModule) {
+            Write-Host "正在安装PowerShell-YAML模块，请稍候..." -ForegroundColor Yellow
+            Install-Module -Name powershell-yaml -Scope CurrentUser -Force
+            Import-Module powershell-yaml
+            Write-Host "PowerShell-YAML模块安装成功" -ForegroundColor Green
+        } else {
+            Write-Host "已检测到PowerShell-YAML模块" -ForegroundColor Green
+            Import-Module powershell-yaml -ErrorAction SilentlyContinue
+        }
 
-        if ($config.exe.versionInfo) {
-            Write-Host "版本: $($config.exe.versionInfo.fileVersion)" -ForegroundColor Cyan
+        try {
+            # 使用模块解析YAML
+            $yamlContent = Get-Content -Path $configFile -Raw
+            $config = ConvertFrom-Yaml -YamlContent $yamlContent
+            Write-Host "已成功读取配置文件" -ForegroundColor Green
+
+            if ($config.exe.versionInfo) {
+                Write-Host "版本: $($config.exe.versionInfo.fileVersion)" -ForegroundColor Cyan
+            }
+        } catch {
+            Write-Host "无法通过PowerShell-YAML模块解析配置文件，尝试使用内置解析器" -ForegroundColor Yellow
+            $yamlContent = Get-Content -Path $configFile -Raw
+            $config = ConvertFrom-Yaml -YamlContent $yamlContent
+
+            if (-not $config) {
+                throw "无法解析YAML配置文件"
+            }
+
+            Write-Host "已通过内置解析器成功读取配置文件" -ForegroundColor Green
+
+            if ($config.exe.versionInfo) {
+                Write-Host "版本: $($config.exe.versionInfo.fileVersion)" -ForegroundColor Cyan
+            }
         }
     } catch {
         Write-Host "错误: 无法解析配置文件: $_" -ForegroundColor Red
