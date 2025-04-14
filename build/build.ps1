@@ -659,8 +659,25 @@ function New-ZIPPackage {
             }
         }
 
-        # 复制并重命名主脚本
-        $mainScriptSource = Join-Path $scriptPath "main.ps1"
+        # 复制并重命名主脚本 - 使用配置中的源主脚本路径
+        $sourceMainScriptPath = $ZipConfig.structure.sourceMainScript
+
+        # 如果路径包含变量引用，则进行解析
+        if ($sourceMainScriptPath -match '^\${(.+?)}') {
+            $varName = $Matches[1]
+            $varPath = $varName -split '\.'
+
+            # 从配置对象中获取变量值
+            $varValue = $config
+            foreach ($segment in $varPath) {
+                $varValue = $varValue.$segment
+            }
+
+            $sourceMainScriptPath = $varValue
+            Write-Host "解析主脚本路径: $sourceMainScriptPath" -ForegroundColor Gray
+        }
+
+        $mainScriptSource = Join-Path $rootPath $sourceMainScriptPath
         $mainScriptTarget = Join-Path $packageDir $ZipConfig.structure.mainScript
 
         # 确保目标目录存在
@@ -669,8 +686,12 @@ function New-ZIPPackage {
             New-Item -Path $mainScriptTargetDir -ItemType Directory -Force | Out-Null
         }
 
-        Copy-Item -Path $mainScriptSource -Destination $mainScriptTarget -Force
-        Write-Host "已复制主脚本: $mainScriptSource -> $mainScriptTarget" -ForegroundColor Green
+        if (Test-Path $mainScriptSource) {
+            Copy-Item -Path $mainScriptSource -Destination $mainScriptTarget -Force
+            Write-Host "已复制主脚本: $mainScriptSource -> $mainScriptTarget" -ForegroundColor Green
+        } else {
+            Write-Host "警告: 找不到主脚本: $mainScriptSource" -ForegroundColor Yellow
+        }
 
         # 创建ZIP文件
         if (Test-Path $outputFile) {

@@ -122,7 +122,7 @@ ZeroTier-portable/
 │   ├── main.ps1             # 主程序源码
 │   ├── build.ps1            # 构建脚本
 │   ├── temp/                # 临时构建文件目录(自动创建)
-│   └── ps2exe.config.json   # 编译配置文件
+│   └── ps2exe.config.yaml   # 编译配置文件
 ├── data/                    # 数据目录(PS1模式,自动创建)
 │   ├── identity.secret      # 身份密钥
 │   ├── identity.public      # 公钥文件
@@ -133,9 +133,12 @@ ZeroTier-portable/
 │   ├── identity.public      # 公钥文件
 │   ├── planet              # 根服务器配置
 │   └── networks.d/          # 网络配置
-└── releases/               # 发布目录
-    ├── ZeroTier-portable.exe  # EXE版本
-    └── ZeroTier-portable.zip  # PS1版本
+├── releases/               # 发布目录
+│   ├──  ZeroTier-portable.exe  # EXE版本
+│   └── ZeroTier-portable.zip  # PS1版本
+├── LICENSE.md              # 许可证文件
+├── README.md               # 项目说明文件
+└── main.ps1                # 主程序入口文件
 ```
 
 #### 运行模式

@@ -9,7 +9,7 @@ buildTargets:
 # EXE 版本配置
 exe:
   # 输入文件 (主脚本)
-  inputFile: build/main.ps1
+  inputFile: main.ps1
 
   # 输出路径
   outputFile: releases/ZeroTier-portable.exe
@@ -66,8 +66,11 @@ zip:
     # 根文件夹名称
     rootFolder: ZeroTier-portable
 
-    # 主脚本名称
+    # 主脚本名称（启动脚本）
     mainScript: start.ps1
+
+    # 源主脚本路径（相对于根目录，使用通用配置的主脚本）
+    sourceMainScript: main.ps1
 
   # 要包含的文件
   files:

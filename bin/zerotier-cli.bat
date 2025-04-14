@@ -1,8 +1,19 @@
 @ECHO OFF
-SETLOCAL
+SETLOCAL EnableDelayedExpansion
+
 :: ZeroTier CLI Portable Wrapper
-:: Version: 1.2.0
-:: Date: 2025-04-10
+:: Version: 1.4.0
+:: Date: 2025-04-14
+
+:: ZeroTier portable的位置固定在临时目录中
+SET "ZT_INSTALL_PATH=%TEMP%\ZeroTier-portable-temp"
+
+:: 检查文件是否存在
+IF NOT EXIST "%ZT_INSTALL_PATH%\bin\zerotier-one_x64.exe" (
+    ECHO 错误: 无法找到ZeroTier程序文件。
+    ECHO 请确保ZeroTier便携版正在运行。
+    EXIT /B 1
+)
 
 :: Check if help is needed
 IF "%1"=="help" (
@@ -15,21 +26,21 @@ IF "%1"=="-h" (
 :: Check if using replace parameter
 IF "%1"=="replace" (
     ECHO Starting Planet Replacement Tool...
-    powershell.exe -ExecutionPolicy Bypass -File "%~dp0..\ps\planet-replace.ps1"
+    powershell.exe -ExecutionPolicy Bypass -File "%ZT_INSTALL_PATH%\ps\planet-replace.ps1"
     EXIT /B %ERRORLEVEL%
 )
 
-:: Set ZeroTier home directory to data folder in relative path
-SET "ZT_HOME=%~dp0..\data"
+:: Set ZeroTier home directory to data folder
+SET "ZT_HOME=%ZT_INSTALL_PATH%\data"
 
-:: Call zerotier-one_x64.exe using relative path with -q and -D parameters
-"%~dp0zerotier-one_x64.exe" -q -D"%ZT_HOME%" %*
+:: Call zerotier-one_x64.exe using absolute path with -q and -D parameters
+"%ZT_INSTALL_PATH%\bin\zerotier-one_x64.exe" -q -D"%ZT_HOME%" %*
 GOTO :EOF
 
 :SHOWHELP
 ECHO ===================================================
 ECHO         ZeroTier CLI Portable - Help
-ECHO         Version: 1.2.0
+ECHO         Version: 1.4.0
 ECHO ===================================================
 ECHO.
 ECHO Description:
