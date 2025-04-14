@@ -114,7 +114,7 @@ if ($fromExe) {
     $rootPath = Split-Path -Parent $scriptPath
     $binPath = Join-Path -Path $rootPath -ChildPath "bin"
     $zerotierExe = Join-Path -Path $binPath -ChildPath "zerotier-one_x64.exe"
-    $dataPath = Join-Path -Path $rootPath -ChildPath "ZeroTierData"
+    $dataPath = Join-Path -Path $rootPath -ChildPath "data"
 }
 
 Write-Host "使用根目录: $rootPath" -ForegroundColor Yellow

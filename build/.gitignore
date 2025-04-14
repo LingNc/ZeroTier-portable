@@ -4,5 +4,6 @@
 !*.md
 !*.json
 !.gitignore
+!icon.ico
 
 temp_main*

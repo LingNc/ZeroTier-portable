@@ -297,6 +297,17 @@ $ps2exeParams = @(
     "-outputFile `"$outputFile`""
 )
 
+# 添加图标参数
+if ($config.iconFile) {
+    $iconPath = Join-Path $rootPath $config.iconFile
+    if (Test-Path $iconPath) {
+        $ps2exeParams += "-iconFile `"$iconPath`""
+        Write-Host "使用自定义图标: $iconPath" -ForegroundColor Green
+    } else {
+        Write-Host "警告: 指定的图标文件不存在: $iconPath" -ForegroundColor Yellow
+    }
+}
+
 # 添加版本信息参数
 if ($config.versionInfo) {
     $versionInfo = $config.versionInfo

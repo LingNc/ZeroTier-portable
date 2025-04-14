@@ -1,7 +1,7 @@
 ﻿# ZeroTier便携版启动脚本
 # 此脚本用于启动便携版ZeroTier
 # 作者: LingNc
-# 版本: 1.2.5
+# 版本: v0.2.6-alpha
 # 日期: 2025-04-13
 
 <#
@@ -27,7 +27,7 @@ param (
     )
 
 # 全局版本变量 - 便于统一管理版本号
-$script:ZT_VERSION="1.2.5"
+$script:ZT_VERSION="v0.2.6-alpha"
 
 # BEGIN EMBEDDED FILES
 # 此代码段包含直接嵌入到脚本中的文件，使用Base64编码
@@ -260,7 +260,20 @@ if (-not [string]::IsNullOrEmpty($script:packageBase64) -and -not ($script:packa
 } else {
     # 直接运行PS1
     $execMode = "PS1模式"
-    $baseDir = Split-Path -Parent $PSScriptRoot # 获取build文件夹的父目录
+
+    # 修复路径检测，直接使用PS1文件所在目录作为基准
+    if ($PSScriptRoot -match "\\build$") {
+        # 如果是在build目录下运行，则父目录是项目根目录
+        $baseDir = Split-Path -Parent $PSScriptRoot
+    } else {
+        # 如果在其他位置运行，使用当前工作目录
+        $baseDir = $PSScriptRoot
+        if ([string]::IsNullOrEmpty($baseDir)) {
+            # 兜底防止$PSScriptRoot为空
+            $baseDir = (Get-Location).Path
+        }
+    }
+
     $runtimePath = $baseDir # PS1模式下runtime就是项目根目录
     # PS1模式下使用data作为数据目录
     $dataPath = Join-Path -Path $baseDir -ChildPath "data"
@@ -333,15 +346,31 @@ function Clean-Environment {
         Write-ZTLog "已移除命令行工具 zerotier-idtool" -Level Info -ForegroundColor Green
     }
 
-    # 2. 清理临时运行目录
-    if ($tempPath -ne $PSScriptRoot -and (Test-PathSafely -Path $tempPath)) {
+    # 2. 清理临时运行目录 - 添加安全检查，防止删除重要目录
+    if ($execMode -eq "EXE模式" -and
+        -not [string]::IsNullOrEmpty($tempPath) -and
+        $tempPath -like "*ZeroTier-portable-temp*" -and
+        (Test-PathSafely -Path $tempPath)) {
+
+        Write-ZTLog "准备清理临时目录: $tempPath" -Level Info
+
         try {
-            Remove-Item $tempPath -Recurse -Force -ErrorAction Stop
-            Write-ZTLog "已清理临时文件 $tempPath" -Level Info -ForegroundColor Green
+            # 安全地删除临时目录内容
+            Get-ChildItem -Path $tempPath -Force | Remove-Item -Recurse -Force -ErrorAction Stop
+            Write-ZTLog "已清理临时文件内容" -Level Info -ForegroundColor Green
+
+            # 尝试删除目录本身
+            Remove-Item $tempPath -Force -ErrorAction Stop
+            Write-ZTLog "已删除临时目录" -Level Info -ForegroundColor Green
         }
         catch {
             Write-ZTLog "警告: 清理临时目录失败: $_" -Level Warning
             Write-ZTLog "一些临时文件可能保留在: $tempPath" -Level Warning
+        }
+    } else {
+        Write-ZTLog "跳过不符合安全条件的路径删除: $tempPath" -Level Info
+        if ($execMode -eq "PS1模式") {
+            Write-ZTLog "PS1模式下不删除主目录" -Level Info
         }
     }
 
