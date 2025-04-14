@@ -222,10 +222,56 @@ function Process-Files {
         # 收集所有匹配的文件
         $files = @()
         foreach ($pattern in $FilePaths) {
-            $resolvedPath = Join-Path $rootPath $pattern.Replace('/**', '\*').Replace('**', '*')
-            Write-Host "解析路径: $resolvedPath" -ForegroundColor Gray
-            $matchingFiles = Get-ChildItem -Path $resolvedPath -Recurse -File
-            $files += $matchingFiles
+            # 检查是否是根目录下的具体文件（没有路径分隔符）
+            if ($pattern -notmatch '[/\\]' -and $pattern -notmatch '\*') {
+                # 直接匹配根目录下的具体文件
+                $exactPath = Join-Path $rootPath $pattern
+                if (Test-Path $exactPath -PathType Leaf) {
+                    Write-Host "精确匹配文件: $exactPath" -ForegroundColor Green
+                    $files += Get-Item -Path $exactPath
+                } else {
+                    Write-Host "警告: 未找到精确匹配的文件: $exactPath" -ForegroundColor Yellow
+                }
+            }
+            # 检查是否含有双星号通配符（表示递归搜索）
+            elseif ($pattern -match '\*\*') {
+                # 处理递归通配符路径
+                $patternFixed = $pattern -replace '\*\*', '*'
+                $patternFixed = $patternFixed -replace '/', '\'
+                $resolvedPath = Join-Path $rootPath $patternFixed
+                Write-Host "解析递归路径: $resolvedPath" -ForegroundColor Gray
+                $matchingFiles = Get-ChildItem -Path $resolvedPath -Recurse -File
+                $files += $matchingFiles
+            }
+            # 处理含有单星号的路径（只匹配当前目录）
+            elseif ($pattern -match '\*') {
+                $parentPath = Split-Path -Parent $pattern
+                $patternFixed = $pattern -replace '/', '\'
+                if ([string]::IsNullOrEmpty($parentPath)) {
+                    # 根目录下的通配符模式
+                    $resolvedPath = Join-Path $rootPath $patternFixed
+                } else {
+                    # 子目录下的通配符模式
+                    $resolvedPath = Join-Path $rootPath $patternFixed
+                }
+                Write-Host "解析单级通配路径: $resolvedPath" -ForegroundColor Gray
+                $matchingFiles = Get-ChildItem -Path $resolvedPath -File
+                $files += $matchingFiles
+            }
+            # 处理具体目录路径
+            else {
+                $exactPath = Join-Path $rootPath $pattern
+                if (Test-Path $exactPath -PathType Container) {
+                    Write-Host "精确匹配目录: $exactPath" -ForegroundColor Green
+                    $matchingFiles = Get-ChildItem -Path $exactPath -File
+                    $files += $matchingFiles
+                } elseif (Test-Path $exactPath -PathType Leaf) {
+                    Write-Host "精确匹配文件: $exactPath" -ForegroundColor Green
+                    $files += Get-Item -Path $exactPath
+                } else {
+                    Write-Host "警告: 未找到精确匹配的路径: $exactPath" -ForegroundColor Yellow
+                }
+            }
         }
 
         if ($files.Count -eq 0) {
@@ -234,6 +280,10 @@ function Process-Files {
         }
 
         Write-Host "找到 $($files.Count) 个文件" -ForegroundColor Green
+        # 输出匹配到的文件列表以便调试
+        foreach ($file in $files) {
+            Write-Host "匹配到文件: $($file.FullName)" -ForegroundColor Gray
+        }
 
         # 根据方法处理文件
         if ($Method -eq "zip") {
@@ -274,7 +324,9 @@ function Process-Files {
             # 直接Base64编码模式
             $fileDict = @{}
             foreach ($file in $files) {
-                $relativePath = $file.FullName.Substring($rootPath.Length + 1).Replace('\', '/')
+                # 使用Replace方法而不是通过-replace操作符
+                $relativePath = $file.FullName.Substring($rootPath.Length + 1)
+                $relativePath = $relativePath.Replace('\', '/')
                 $bytes = [System.IO.File]::ReadAllBytes($file.FullName)
                 $base64 = [Convert]::ToBase64String($bytes)
                 $fileDict[$relativePath] = $base64
