@@ -1,7 +1,7 @@
 ﻿# ZeroTier便携版启动脚本
 # 此脚本用于启动便携版ZeroTier
 # 作者: LingNc
-# 版本: v0.2.6-alpha
+# 版本: v0.3.6-alpha
 # 日期: 2025-04-13
 
 <#
@@ -27,7 +27,7 @@ param (
     )
 
 # 全局版本变量 - 便于统一管理版本号
-$script:ZT_VERSION="v0.2.6-alpha"
+$script:ZT_VERSION="v0.3.6-alpha"
 
 # BEGIN EMBEDDED FILES
 # 此代码段包含直接嵌入到脚本中的文件，使用Base64编码

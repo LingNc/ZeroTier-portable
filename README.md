@@ -18,7 +18,7 @@ MIT开源协议
    - 按照界面提示完成配置
 
 3. PS1模式使用方法：
-   - 解压ZIP包到任意位置
+   - 解压PS1包到任意位置
    - 右键`start.ps1`选择"使用PowerShell运行"
    - 遵循界面提示完成配置
 
@@ -31,14 +31,31 @@ MIT开源协议
 - 完整的卸载清理
 
 ### 命令行工具
-```
-zerotier-cli join <网络ID>    # 加入网络
-zerotier-cli listnetworks     # 查看已加入的网络
-zerotier-cli info            # 查看节点信息
-zerotier-cli leave <网络ID>   # 退出网络
-zerotier-cli set <网络ID> allowManaged=1   # 允许托管配置
+```shell
+# 新增两功能
+zerotier-cli help [or] -h    # 显示帮助信息
 zerotier-cli replace         # 启动Planet配置工具
-zerotier-idtool inter       # 启动身份管理工具
+zerotier-idtool help [or] -h # 显示身份管理帮助信息
+zerotier-idtool inter        # 启动身份管理工具
+
+# 网络管理
+zerotier-cli info            # 显示节点信息
+zerotier-cli listnetworks    # 查看已加入的网络
+zerotier-cli listpeers       # 查看节点列表
+zerotier-cli peers           # 查看节点信息(更美观格式)
+zerotier-cli join <网络ID>   # 加入网络
+zerotier-cli leave <网络ID>  # 退出网络
+zerotier-cli set <网络ID> <设置> # 设置网络选项
+zerotier-cli listmoons       # 列出所有moons(联邦根服务器)
+zerotier-cli orbit <world ID> <seed> # 加入moon
+zerotier-cli deorbit <world ID> # 离开moon
+
+# 身份工具
+zerotier-idtool generate <文件路径> <公钥路径> # 生成新身份
+zerotier-idtool validate <身份文件>  # 验证身份文件
+zerotier-idtool getpublic <身份文件> # 从私钥获取公钥
+zerotier-idtool sign <身份文件> <文件> # 使用身份签名文件
+zerotier-idtool verify <身份文件> <文件> <签名> # 验证签名
 ```
 
 ### 计划功能
@@ -99,14 +116,21 @@ ZeroTier-portable/
 ├── build/                  # 构建相关文件
 │   ├── main.ps1             # 主程序源码
 │   ├── build.ps1            # 构建脚本
+│   ├── temp/                # 临时构建文件目录(自动创建)
 │   └── ps2exe.config.json   # 编译配置文件
-├── data/                   # 数据目录(自动创建)
+├── data/                    # 数据目录(PS1模式,自动创建)
+│   ├── identity.secret      # 身份密钥
+│   ├── identity.public      # 公钥文件
+│   ├── planet              # 根服务器配置
+│   └── networks.d/          # 网络配置
+├── ZeroTierData/           # 数据目录(EXE模式,自动创建)
 │   ├── identity.secret      # 身份密钥
 │   ├── identity.public      # 公钥文件
 │   ├── planet              # 根服务器配置
 │   └── networks.d/          # 网络配置
 └── releases/               # 发布目录
-    └── ...                # 发布的文件
+    ├── ZeroTier-portable.exe  # EXE版本
+    └── ZeroTier-portable.zip  # PS1版本
 ```
 
 #### 运行模式
@@ -116,19 +140,20 @@ ZeroTier-portable/
    - 使用ZeroTierData保存配置
 
 2. **PS1模式**
-   - 直接使用源文件
-   - 就地运行程序
-   - 使用data目录保存配置
+   - 包含完整源文件结构
+   - 通过start.ps1启动
+   - 便于修改和定制
 
 #### 构建过程
 1. 使用build.ps1进行构建：
-   - 编译EXE版本
-   - 打包PS1版本
-   - 生成发布文件
+   - 编译EXE版本(嵌入式资源)
+   - 打包PS1版本(完整文件结构)
+   - 临时文件存储在build/temp目录
 
 2. 构建配置(ps2exe.config.json):
-   - 版本信息设置
-   - 资源打包规则
+   - 分离EXE与PS1模式配置
+   - 自定义版本信息和图标
+   - 灵活的文件打包规则
    - 运行权限配置
 
 #### 数据持久化
@@ -154,7 +179,7 @@ ZeroTier-portable/
 ### 开发环境
 - Windows 10/11
 - PowerShell 5.1+
-- PS2EXE工具
+- PS2EXE模块
 - Visual Studio Code
 
 ### 致谢
